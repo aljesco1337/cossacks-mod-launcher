@@ -24,17 +24,17 @@
     <ClInclude Include="Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CossacksScriptTool.h">
+    <ClInclude Include="CossacksLogViewer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CossacksScriptTool.cpp">
+    <ClCompile Include="CossacksLogViewer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="CossacksScriptTool.rc">
+    <ResourceCompile Include="CossacksLogViewer.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
@@ -42,7 +42,7 @@
     <Image Include="small.ico">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="CossacksScriptTool.ico">
+    <Image Include="CossacksLogViewer.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>

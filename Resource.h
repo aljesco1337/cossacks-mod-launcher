@@ -1,17 +1,22 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by CossacksScriptTool.rc
+// Used by CossacksLogViewer.rc
 
 #define IDS_APP_TITLE			103
 
 #define IDR_MAINFRAME			128
-#define IDD_COSSACKSSCRIPTTOOL_DIALOG	102
+#define IDD_COSSACKSLOGVIEWER_DIALOG	102
 #define IDD_ABOUTBOX			103
 #define IDM_ABOUT				104
 #define IDM_EXIT				105
-#define IDI_COSSACKSSCRIPTTOOL			107
+#define IDM_REFRESH_LOGS		110
+#define IDM_BROWSE_GAME			111
+#define IDM_DETECT_GAME			112
+#define IDM_SELECT_FIRST_ERROR	113
+#define IDM_AUTO_UPDATE_LOGS	114
+#define IDI_COSSACKSLOGVIEWER			107
 #define IDI_SMALL				108
-#define IDC_COSSACKSSCRIPTTOOL			109
+#define IDC_COSSACKSLOGVIEWER			109
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1

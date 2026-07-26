@@ -25,6 +25,7 @@ build/
 [Mm]inSizeRel/
 
 # Visual C++ intermediate files
+*.aps
 *.obj
 *.pch
 *.pdb
@@ -46,6 +47,8 @@ build/
 
 # VS Code
 .vscode/
+
+.idea/
 
 # Windows
 Thumbs.db
