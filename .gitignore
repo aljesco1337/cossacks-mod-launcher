@@ -1,0 +1,52 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build output
+Debug/
+Release/
+x64/
+x86/
+ARM/
+ARM64/
+bin/
+obj/
+out/
+build/
+
+# Per-configuration build folders
+[Bb]uild/
+[Dd]ebug*/
+[Rr]elease*/
+[Rr]elWithDebInfo/
+[Mm]inSizeRel/
+
+# Visual C++ intermediate files
+*.obj
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.ipdb
+*.iobj
+*.tlog
+*.lastbuildstate
+*.log
+*.cache
+*.res
+*.exp
+*.lib
+
+# Generated binaries
+*.exe
+*.dll
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+Desktop.ini
