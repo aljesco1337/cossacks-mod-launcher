@@ -13,36 +13,67 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Core">
+      <UniqueIdentifier>{0D0C50B0-CC38-4B76-B1A9-06B5A7A61F11}</UniqueIdentifier>
+      <Extensions>cpp;h</Extensions>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="framework.h">
+    <ClInclude Include="src\core\Types.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\TextUtils.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\LogModel.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\LogParser.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\core\GameDirectory.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="src\windows\framework.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="targetver.h">
+    <ClInclude Include="src\windows\targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Resource.h">
+    <ClInclude Include="src\windows\Resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="CossacksLogViewer.h">
+    <ClInclude Include="src\windows\CossacksLogViewer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CossacksLogViewer.cpp">
+    <ClCompile Include="src\core\TextUtils.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\LogModel.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\LogParser.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\core\GameDirectory.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="src\windows\CossacksLogViewer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="CossacksLogViewer.rc">
+    <ResourceCompile Include="src\windows\CossacksLogViewer.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="small.ico">
+    <Image Include="src\windows\small.ico">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="CossacksLogViewer.ico">
+    <Image Include="src\windows\CossacksLogViewer.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>

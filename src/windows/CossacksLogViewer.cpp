@@ -1,7 +1,4 @@
-﻿// CossacksLogViewer.cpp : Defines the entry point for the application.
-//
-
-#pragma once
+﻿// CossacksLogViewer.cpp : Defines the entry point for the Windows application.
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -10,25 +7,31 @@
 #include "framework.h"
 #include <commctrl.h>
 #include <uxtheme.h>
+#include <shobjidl.h>
+#include <richedit.h>
+#include <windowsx.h>
+
 #include <vector>
 #include <string>
 #include <string_view>
 #include <algorithm>
 #include <fstream>
 #include <sstream>
-#include <shobjidl.h>
 #include <optional>
-#include <richedit.h>
 #include <filesystem>
 #include <regex>
 #include <cwctype>
-#include <windowsx.h>
 #include <iterator>
 
-namespace fs = std::filesystem;
-
-
 #include "CossacksLogViewer.h"
+
+#include "core/Types.h"
+#include "core/TextUtils.h"
+#include "core/LogModel.h"
+#include "core/LogParser.h"
+#include "core/GameDirectory.h"
+
+namespace fs = std::filesystem;
 
 #pragma comment(lib, "Comctl32.lib")
 #pragma comment(lib, "Ole32.lib")
@@ -91,7 +94,7 @@ int gSelectedErrorCount = 0;
 int gSelectedCriticalCount = 0;
 bool gPreviewCacheValid = false;
 std::wstring gPreviewFilePath;
-FILETIME gPreviewModifiedTime{};
+fs::file_time_type gPreviewModifiedTime{};
 std::wstring gPreviewContent;
 
 constexpr int kErrorPaneMaxHeight = 330;
@@ -126,54 +129,14 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
-struct LogFileInfo
-{
-    std::wstring fileName;
-    std::wstring fullPath;
-    FILETIME modifiedTime;
-};
+using core::LogFileInfo;
+using core::LogSeverityCounts;
 
-struct LogSeverityCounts
-{
-    int errors = 0;
-    int critical = 0;
-};
-
-struct FrameworkCodeLine
-{
-    int globalLine = 0;
-    int frameworkPhysicalLine = 0;
-    std::wstring content;
-};
-
-struct FrameworkDefinition
-{
-    std::vector<FrameworkCodeLine> codeLines;
-    std::vector<std::wstring> filePaths;
-};
-
-struct SourceFileRange
-{
-    std::wstring relativePath;
-    fs::path absolutePath;
-    int firstGlobalLine = 0;
-    int lastGlobalLine = -1;
-    std::vector<std::wstring> lines;
-};
-
-struct ScriptLineMap
-{
-    fs::path frameworkPath;
-    std::vector<FrameworkCodeLine> codeLines;
-    std::vector<SourceFileRange> sourceFiles;
-};
-
-struct ParsedScriptError
-{
-    int globalLine = 0;
-    int column = 0;
-    std::wstring message;
-};
+using core::ReadTextFile;
+using core::CountLogSeverity;
+using core::FormatPreviewText;
+using core::IsValidGameDirectory;
+using core::NormalizeGameDirectory;
 
 std::vector<LogFileInfo> gLogFiles;
 
@@ -182,7 +145,6 @@ std::wstring GetControlText(HWND control);
 void ShowSelectedLog();
 void HighlightCompileErrors();
 void HighlightErrorPrefixes();
-std::wstring ReadTextFile(const std::wstring& path);
 std::optional<std::wstring> SelectDirectory(HWND owner);
 void CreateAppFonts();
 void ApplyModernControlStyles();
@@ -191,17 +153,6 @@ void LayoutControls(HWND hWnd, int width, int height);
 void DrawRoundedPanel(HDC hdc, const RECT& rect, int radius);
 void DrawButton(const DRAWITEMSTRUCT* item);
 void UpdateStatusLabels();
-LogSeverityCounts CountLogSeverity(const std::wstring& text);
-std::wstring Trim(std::wstring value);
-std::wstring CleanConfigValue(const std::wstring& value);
-std::wstring ExpandTabs(const std::wstring& text, int tabSize);
-std::vector<std::wstring> SplitLinesPreserveTrailing(const std::wstring& text);
-std::optional<std::wstring> FindFrameworkPath(const fs::path& globalScriptPath, std::wstring& error);
-std::optional<FrameworkDefinition> ReadFrameworkDefinition(const fs::path& frameworkPath, std::wstring& error);
-fs::path ResolveGamePath(const fs::path& gameDir, const std::wstring& configuredPath);
-std::optional<ScriptLineMap> BuildScriptLineMap(const fs::path& gameDir, const fs::path& frameworkPath, const FrameworkDefinition& framework, std::wstring& error);
-std::optional<ParsedScriptError> ParseScriptError(const std::wstring& text, std::wstring& error);
-std::wstring ResolveScriptErrorText(const std::wstring& errorLine);
 std::wstring GetCaretLineText(HWND edit);
 
 void CreateErrorPane(HWND owner);
@@ -217,7 +168,6 @@ WINDOWPLACEMENT LoadWindowPlacement();
 void SaveWindowPlacement(HWND window);
 void NormalizeWindowPlacement(WINDOWPLACEMENT& placement);
 
-bool IsValidGameDirectory(const std::wstring& path);
 void ClearLoadedLogs();
 void ClearPreviewCache();
 
@@ -236,16 +186,13 @@ std::optional<std::wstring> ReadRegistryString(
 );
 
 std::optional<std::wstring> ReadSteamInstallDir(const fs::path& library);
-std::wstring NormalizeGameDirectory(const std::wstring& path);
 
 void LoadLogSortSetting();
 void SaveLogSortSetting();
 void LoadAutoUpdateLogsSetting();
 void SaveAutoUpdateLogsSetting();
 void UpdateAutoUpdateLogsMenu(HWND hWnd);
-void SortLogFiles();
 void UpdateModifiedColumnTitle();
-std::wstring FormatPreviewText(const std::wstring& text);
 bool SelectFirstCompileErrorLine();
 bool IsOnSplitter(HWND hWnd, int x, int y);
 
@@ -1360,18 +1307,13 @@ void LoadLogFiles(HWND owner, bool showWarnings, bool preserveSelection)
     }
 
     std::wstring logsDirectory = baseDirectory + L"\\log";
-    std::wstring searchPattern = logsDirectory + L"\\*";
 
-    WIN32_FIND_DATAW findData{};
-    HANDLE findHandle = FindFirstFileW(
-        searchPattern.c_str(),
-        &findData
-    );
+    gLogFiles = core::EnumerateLogFiles(baseDirectory);
+    core::SortLogFiles(gLogFiles, gSortDescending);
 
     ListView_DeleteAllItems(hLogList);
-    gLogFiles.clear();
 
-    if (findHandle == INVALID_HANDLE_VALUE)
+    if (gLogFiles.empty())
     {
         HideErrorPane();
         ClearPreviewCache();
@@ -1394,58 +1336,13 @@ void LoadLogFiles(HWND owner, bool showWarnings, bool preserveSelection)
         return;
     }
 
-    do
-    {
-        if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
-        {
-            continue;
-        }
-
-        LogFileInfo logFile;
-        logFile.fileName = findData.cFileName;
-        logFile.fullPath =
-            logsDirectory + L"\\" + findData.cFileName;
-        logFile.modifiedTime = findData.ftLastWriteTime;
-
-        gLogFiles.push_back(std::move(logFile));
-
-    } while (FindNextFileW(findHandle, &findData));
-
-    FindClose(findHandle);
-
-    SortLogFiles();
-
     for (int index = 0;
         index < static_cast<int>(gLogFiles.size());
         index++)
     {
         const LogFileInfo& logFile = gLogFiles[index];
 
-        FILETIME localFileTime{};
-        SYSTEMTIME systemTime{};
-
-        FileTimeToLocalFileTime(
-            &logFile.modifiedTime,
-            &localFileTime
-        );
-
-        FileTimeToSystemTime(
-            &localFileTime,
-            &systemTime
-        );
-
-        wchar_t modified[64]{};
-
-        swprintf_s(
-            modified,
-            L"%04d-%02d-%02d %02d:%02d:%02d",
-            systemTime.wYear,
-            systemTime.wMonth,
-            systemTime.wDay,
-            systemTime.wHour,
-            systemTime.wMinute,
-            systemTime.wSecond
-        );
+        const std::wstring modified = core::FormatModifiedTime(logFile.modifiedTime);
 
         LVITEMW item{};
         item.mask = LVIF_TEXT;
@@ -1454,7 +1351,12 @@ void LoadLogFiles(HWND owner, bool showWarnings, bool preserveSelection)
             const_cast<wchar_t*>(logFile.fileName.c_str());
 
         ListView_InsertItem(hLogList, &item);
-        ListView_SetItemText(hLogList, index, 1, modified);
+        ListView_SetItemText(
+            hLogList,
+            index,
+            1,
+            const_cast<wchar_t*>(modified.c_str())
+        );
     }
 
     UpdateModifiedColumnTitle();
@@ -1499,535 +1401,6 @@ void LoadLogFiles(HWND owner, bool showWarnings, bool preserveSelection)
     {
         ShowSelectedLog();
     }
-}
-
-std::wstring ReadTextFile(const std::wstring& path)
-{
-    std::ifstream file(fs::path(path), std::ios::binary);
-
-    if (!file.is_open())
-    {
-        return L"Cannot open file:\r\n" + path;
-    }
-
-    std::string bytes{
-        std::istreambuf_iterator<char>(file),
-        std::istreambuf_iterator<char>()
-    };
-
-    if (bytes.empty())
-    {
-        return {};
-    }
-
-    auto startsWith = [&bytes](std::initializer_list<unsigned char> prefix)
-    {
-        if (bytes.size() < prefix.size()) return false;
-
-        size_t index = 0;
-        for (unsigned char value : prefix)
-        {
-            if (static_cast<unsigned char>(bytes[index]) != value) return false;
-            index++;
-        }
-
-        return true;
-    };
-
-    auto decodeMultiByte = [](const char* data, int length, UINT codePage, DWORD flags) -> std::optional<std::wstring>
-    {
-        if (length <= 0) return std::wstring();
-
-        int wideLength = MultiByteToWideChar(codePage, flags, data, length, nullptr, 0);
-        if (wideLength <= 0) return std::nullopt;
-
-        std::wstring text(static_cast<size_t>(wideLength), L'\0');
-        int converted = MultiByteToWideChar(codePage, flags, data, length, text.data(), wideLength);
-        if (converted <= 0) return std::nullopt;
-
-        text.resize(static_cast<size_t>(converted));
-        return text;
-    };
-
-    auto decodeUtf16 = [](const std::string& data, size_t offset, bool bigEndian)
-    {
-        std::wstring text;
-        text.reserve((data.size() - offset) / 2);
-
-        for (size_t index = offset; index + 1 < data.size(); index += 2)
-        {
-            unsigned char first = static_cast<unsigned char>(data[index]);
-            unsigned char second = static_cast<unsigned char>(data[index + 1]);
-            wchar_t character = bigEndian
-                ? static_cast<wchar_t>((first << 8) | second)
-                : static_cast<wchar_t>((second << 8) | first);
-
-            text.push_back(character);
-        }
-
-        return text;
-    };
-
-    if (startsWith({ 0xEF, 0xBB, 0xBF }))
-    {
-        auto decoded = decodeMultiByte(bytes.data() + 3, static_cast<int>(bytes.size() - 3), CP_UTF8, MB_ERR_INVALID_CHARS);
-        return decoded.value_or(std::wstring());
-    }
-
-    if (startsWith({ 0xFF, 0xFE }))
-    {
-        return decodeUtf16(bytes, 2, false);
-    }
-
-    if (startsWith({ 0xFE, 0xFF }))
-    {
-        return decodeUtf16(bytes, 2, true);
-    }
-
-    if (auto utf8 = decodeMultiByte(bytes.data(), static_cast<int>(bytes.size()), CP_UTF8, MB_ERR_INVALID_CHARS))
-    {
-        return *utf8;
-    }
-
-    if (auto cp1251 = decodeMultiByte(bytes.data(), static_cast<int>(bytes.size()), 1251, 0))
-    {
-        return *cp1251;
-    }
-
-    return L"Cannot decode file:\r\n" + path;
-}
-
-std::wstring Trim(std::wstring value)
-{
-    auto isSpace = [](wchar_t character)
-    {
-        return std::iswspace(character) != 0;
-    };
-
-    value.erase(
-        value.begin(),
-        std::find_if(value.begin(), value.end(), [isSpace](wchar_t character) { return !isSpace(character); })
-    );
-
-    value.erase(
-        std::find_if(value.rbegin(), value.rend(), [isSpace](wchar_t character) { return !isSpace(character); }).base(),
-        value.end()
-    );
-
-    return value;
-}
-
-std::wstring CleanConfigValue(const std::wstring& value)
-{
-    std::wstring result = Trim(value);
-
-    if (!result.empty() && result.back() == L';')
-    {
-        result.pop_back();
-        result = Trim(result);
-    }
-
-    if (result.size() >= 2)
-    {
-        wchar_t first = result.front();
-        wchar_t last = result.back();
-        if ((first == L'\'' && last == L'\'') || (first == L'"' && last == L'"'))
-        {
-            result = Trim(result.substr(1, result.size() - 2));
-        }
-    }
-
-    return result;
-}
-
-std::wstring ExpandTabs(const std::wstring& text, int tabSize)
-{
-    std::wstring result;
-    int column = 0;
-
-    for (wchar_t character : text)
-    {
-        if (character == L'\t')
-        {
-            int spaces = tabSize - (column % tabSize);
-            result.append(static_cast<size_t>(spaces), L' ');
-            column += spaces;
-        }
-        else
-        {
-            result.push_back(character);
-            column++;
-        }
-    }
-
-    return result;
-}
-
-std::vector<std::wstring> SplitLinesPreserveTrailing(const std::wstring& text)
-{
-    std::vector<std::wstring> lines;
-    if (text.empty()) return lines;
-
-    std::wstring current;
-
-    for (size_t index = 0; index < text.size(); index++)
-    {
-        wchar_t character = text[index];
-
-        if (character == L'\r')
-        {
-            lines.push_back(current);
-            current.clear();
-
-            if (index + 1 < text.size() && text[index + 1] == L'\n')
-            {
-                index++;
-            }
-        }
-        else if (character == L'\n')
-        {
-            lines.push_back(current);
-            current.clear();
-        }
-        else
-        {
-            current.push_back(character);
-        }
-    }
-
-    lines.push_back(current);
-    return lines;
-}
-
-std::optional<std::wstring> FindFrameworkPath(const fs::path& globalScriptPath, std::wstring& error)
-{
-    if (!fs::is_regular_file(globalScriptPath))
-    {
-        error = L"Global script does not exist:\r\n" + globalScriptPath.wstring();
-        return std::nullopt;
-    }
-
-    static const std::wregex frameworkPattern(
-        LR"regex(^\s*framework\s*=\s*(.+?)\s*$)regex",
-        std::regex_constants::icase
-    );
-
-    std::vector<std::wstring> lines = SplitLinesPreserveTrailing(ReadTextFile(globalScriptPath.wstring()));
-    for (const std::wstring& line : lines)
-    {
-        std::wsmatch match;
-        if (std::regex_match(line, match, frameworkPattern))
-        {
-            return CleanConfigValue(match[1].str());
-        }
-    }
-
-    error = L"Cannot find 'framework = ...' in:\r\n" + globalScriptPath.wstring();
-    return std::nullopt;
-}
-
-std::optional<FrameworkDefinition> ReadFrameworkDefinition(const fs::path& frameworkPath, std::wstring& error)
-{
-    if (!fs::is_regular_file(frameworkPath))
-    {
-        error = L"Framework file does not exist:\r\n" + frameworkPath.wstring();
-        return std::nullopt;
-    }
-
-    static const std::wregex codeSectionPattern(
-        LR"regex(^\s*Code\s*:\s*struct\.begin\s*$)regex",
-        std::regex_constants::icase
-    );
-    static const std::wregex filesSectionPattern(
-        LR"regex(^\s*Files\s*:\s*struct\.begin\s*$)regex",
-        std::regex_constants::icase
-    );
-    static const std::wregex structEndPattern(
-        LR"regex(^\s*struct\.end\s*$)regex",
-        std::regex_constants::icase
-    );
-    static const std::wregex codeLinePattern(
-        LR"regex(^\s*\[\*\]\s*=\s*;(.*)$)regex"
-    );
-    static const std::wregex fileLinePattern(
-        LR"regex(^\s*\[\*\]\s*=\s*(.+?)\s*$)regex"
-    );
-
-    enum class Section
-    {
-        None,
-        Code,
-        Files
-    };
-
-    FrameworkDefinition framework;
-    Section section = Section::None;
-    std::vector<std::wstring> lines = SplitLinesPreserveTrailing(ReadTextFile(frameworkPath.wstring()));
-
-    for (size_t index = 0; index < lines.size(); index++)
-    {
-        const std::wstring& line = lines[index];
-
-        if (std::regex_match(line, codeSectionPattern))
-        {
-            section = Section::Code;
-            continue;
-        }
-
-        if (std::regex_match(line, filesSectionPattern))
-        {
-            section = Section::Files;
-            continue;
-        }
-
-        if (section != Section::None && std::regex_match(line, structEndPattern))
-        {
-            section = Section::None;
-            continue;
-        }
-
-        std::wsmatch match;
-        if (section == Section::Code && std::regex_match(line, match, codeLinePattern))
-        {
-            FrameworkCodeLine codeLine;
-            codeLine.globalLine = static_cast<int>(framework.codeLines.size());
-            codeLine.frameworkPhysicalLine = static_cast<int>(index + 1);
-            codeLine.content = match[1].str();
-            framework.codeLines.push_back(std::move(codeLine));
-        }
-        else if (section == Section::Files && std::regex_match(line, match, fileLinePattern))
-        {
-            std::wstring path = CleanConfigValue(match[1].str());
-            if (!path.empty())
-            {
-                framework.filePaths.push_back(std::move(path));
-            }
-        }
-    }
-
-    if (framework.codeLines.empty())
-    {
-        error = L"The framework Code section contains no '[*] = ;...' lines:\r\n" + frameworkPath.wstring();
-        return std::nullopt;
-    }
-
-    if (framework.filePaths.empty())
-    {
-        error = L"The framework Files section contains no file paths:\r\n" + frameworkPath.wstring();
-        return std::nullopt;
-    }
-
-    return framework;
-}
-
-fs::path ResolveGamePath(const fs::path& gameDir, const std::wstring& configuredPath)
-{
-    std::wstring value = CleanConfigValue(configuredPath);
-    std::replace(value.begin(), value.end(), L'/', L'\\');
-
-    while (value.starts_with(L".\\"))
-    {
-        value.erase(0, 2);
-    }
-
-    while (!value.empty() && (value.front() == L'\\' || value.front() == L'/'))
-    {
-        value.erase(value.begin());
-    }
-
-    fs::path resolved = gameDir / value;
-    std::error_code error;
-    fs::path canonical = fs::weakly_canonical(resolved, error);
-
-    return !error && !canonical.empty()
-        ? canonical
-        : resolved.lexically_normal();
-}
-
-std::optional<ScriptLineMap> BuildScriptLineMap(
-    const fs::path& gameDir,
-    const fs::path& frameworkPath,
-    const FrameworkDefinition& framework,
-    std::wstring& error
-)
-{
-    constexpr int beforeFirstSourceFileLines = 2;
-    constexpr int betweenSourceFilesLines = 1;
-
-    ScriptLineMap lineMap;
-    lineMap.frameworkPath = frameworkPath;
-    lineMap.codeLines = framework.codeLines;
-
-    int nextGlobalLine = static_cast<int>(framework.codeLines.size()) + beforeFirstSourceFileLines;
-
-    for (const std::wstring& relativePath : framework.filePaths)
-    {
-        fs::path absolutePath = ResolveGamePath(gameDir, relativePath);
-
-        if (!fs::is_regular_file(absolutePath))
-        {
-            error = L"Source file does not exist:\r\n" + absolutePath.wstring();
-            return std::nullopt;
-        }
-
-        std::vector<std::wstring> lines = SplitLinesPreserveTrailing(ReadTextFile(absolutePath.wstring()));
-
-        SourceFileRange range;
-        range.relativePath = relativePath;
-        range.absolutePath = absolutePath;
-        range.firstGlobalLine = nextGlobalLine;
-        range.lastGlobalLine = lines.empty()
-            ? nextGlobalLine - 1
-            : nextGlobalLine + static_cast<int>(lines.size()) - 1;
-        range.lines = std::move(lines);
-
-        nextGlobalLine += static_cast<int>(range.lines.size()) + betweenSourceFilesLines;
-        lineMap.sourceFiles.push_back(std::move(range));
-    }
-
-    return lineMap;
-}
-
-std::optional<ParsedScriptError> ParseScriptError(const std::wstring& text, std::wstring& error)
-{
-    static const std::wregex errorPattern(
-        LR"regex(Line:\s*(\d+)\s*,\s*Column:\s*(\d+)\s*:\s*(.+?)\s*$)regex",
-        std::regex_constants::icase
-    );
-
-    std::wsmatch match;
-    if (!std::regex_search(text, match, errorPattern))
-    {
-        error = L"Cannot extract line and column from selected error.";
-        return std::nullopt;
-    }
-
-    ParsedScriptError parsed;
-    parsed.globalLine = std::stoi(match[1].str());
-    parsed.column = std::stoi(match[2].str());
-    parsed.message = match[3].str();
-    return parsed;
-}
-
-std::wstring ResolveScriptErrorText(const std::wstring& errorLine)
-{
-    std::wstring error;
-    auto parsedError = ParseScriptError(errorLine, error);
-    if (!parsedError)
-    {
-        return L"SOURCE LOCATION UNAVAILABLE\r\n\r\n" + error;
-    }
-
-    if (parsedError->globalLine < 0)
-    {
-        return L"SOURCE LOCATION UNAVAILABLE\r\n\r\nGlobal line cannot be negative.";
-    }
-
-    std::wstring gameDirectory = NormalizeGameDirectory(GetControlText(hBaseDir));
-    if (gameDirectory.empty())
-    {
-        return L"SOURCE LOCATION UNAVAILABLE\r\n\r\nBase directory is empty.";
-    }
-
-    fs::path gameDir(gameDirectory);
-    fs::path globalScriptPath = gameDir / L"data" / L"scripts" / L"dmscript.global";
-
-    auto frameworkValue = FindFrameworkPath(globalScriptPath, error);
-    if (!frameworkValue)
-    {
-        return L"SOURCE LOCATION UNAVAILABLE\r\n\r\n" + error;
-    }
-
-    fs::path frameworkPath = ResolveGamePath(gameDir, *frameworkValue);
-    auto framework = ReadFrameworkDefinition(frameworkPath, error);
-    if (!framework)
-    {
-        return L"SOURCE LOCATION UNAVAILABLE\r\n\r\n" + error;
-    }
-
-    auto lineMap = BuildScriptLineMap(gameDir, frameworkPath, *framework, error);
-    if (!lineMap)
-    {
-        return L"SOURCE LOCATION UNAVAILABLE\r\n\r\n" + error;
-    }
-
-    std::wstringstream output;
-    output << L"RESOLVED SOURCE LOCATION\r\n\r\n";
-    output << L"Global line: " << parsedError->globalLine << L"\r\n";
-    output << L"Column: " << parsedError->column << L"\r\n";
-    output << L"Message: " << parsedError->message << L"\r\n\r\n";
-
-    auto appendContent = [&output](const std::wstring& content, int column)
-    {
-        std::wstring expandedContent = ExpandTabs(content, 4);
-        size_t rawPrefixLength = static_cast<size_t>(
-            std::max(0, std::min(column - 1, static_cast<int>(content.size())))
-        );
-        std::wstring expandedPrefix = ExpandTabs(content.substr(0, rawPrefixLength), 4);
-
-        output << expandedContent << L"\r\n";
-        output << std::wstring(expandedPrefix.size(), L' ') << L"^";
-    };
-
-    if (parsedError->globalLine < static_cast<int>(lineMap->codeLines.size()))
-    {
-        const FrameworkCodeLine& codeLine = lineMap->codeLines[static_cast<size_t>(parsedError->globalLine)];
-
-        output << L"Location: framework Code section\r\n";
-        output << L"File: " << lineMap->frameworkPath.wstring() << L"\r\n";
-        output << L"Framework physical line: " << codeLine.frameworkPhysicalLine << L"\r\n\r\n";
-        appendContent(codeLine.content, parsedError->column);
-        return output.str();
-    }
-
-    for (size_t index = 0; index < lineMap->sourceFiles.size(); index++)
-    {
-        const SourceFileRange& file = lineMap->sourceFiles[index];
-
-        if (parsedError->globalLine >= file.firstGlobalLine &&
-            parsedError->globalLine <= file.lastGlobalLine)
-        {
-            int zeroBasedSourceLine = parsedError->globalLine - file.firstGlobalLine;
-            int oneBasedSourceLine = zeroBasedSourceLine + 1;
-            const std::wstring& content = file.lines[static_cast<size_t>(zeroBasedSourceLine)];
-
-            output << L"File: " << file.absolutePath.wstring() << L"\r\n";
-            output << L"Relative file: " << file.relativePath << L"\r\n";
-            output << L"Source line: " << oneBasedSourceLine << L"\r\n";
-            output << L"Source line index: " << zeroBasedSourceLine << L"\r\n\r\n";
-            appendContent(content, parsedError->column);
-            return output.str();
-        }
-
-        int separatorStart = index == 0
-            ? static_cast<int>(lineMap->codeLines.size())
-            : lineMap->sourceFiles[index - 1].lastGlobalLine + 1;
-        int separatorEnd = file.firstGlobalLine - 1;
-
-        if (parsedError->globalLine >= separatorStart &&
-            parsedError->globalLine <= separatorEnd)
-        {
-            output.str(L"");
-            output.clear();
-            output << L"SOURCE LOCATION UNAVAILABLE\r\n\r\n";
-            output << L"Global line " << parsedError->globalLine
-                << L" is an engine-added separator line before "
-                << file.relativePath << L".";
-            return output.str();
-        }
-    }
-
-    int lastKnownLine = lineMap->sourceFiles.empty()
-        ? static_cast<int>(lineMap->codeLines.size()) - 1
-        : lineMap->sourceFiles.back().lastGlobalLine;
-
-    output.str(L"");
-    output.clear();
-    output << L"SOURCE LOCATION UNAVAILABLE\r\n\r\n";
-    output << L"Global line " << parsedError->globalLine
-        << L" is outside the generated script. Last known line is "
-        << lastKnownLine << L".";
-    return output.str();
 }
 
 std::optional<std::wstring> SelectDirectory(HWND owner)
@@ -2122,42 +1495,6 @@ std::optional<std::wstring> SelectDirectory(HWND owner)
     return directory;
 }
 
-std::wstring NormalizeLineEndings(const std::wstring& text)
-{
-    std::wstring result;
-    result.reserve(text.size() + 128);
-
-    for (size_t i = 0; i < text.size(); i++)
-    {
-        wchar_t ch = text[i];
-
-        if (ch == L'\r')
-        {
-            result += L'\r';
-
-            if (i + 1 < text.size() && text[i + 1] == L'\n')
-            {
-                result += L'\n';
-                i++;
-            }
-            else
-            {
-                result += L'\n';
-            }
-        }
-        else if (ch == L'\n')
-        {
-            result += L"\r\n";
-        }
-        else
-        {
-            result += ch;
-        }
-    }
-
-    return result;
-}
-
 void ShowSelectedLog()
 {
     int selectedIndex = ListView_GetNextItem(hLogList, -1, LVNI_SELECTED);
@@ -2173,7 +1510,7 @@ void ShowSelectedLog()
     const bool previewUnchanged =
         gPreviewCacheValid &&
         gPreviewFilePath == logFile.fullPath &&
-        CompareFileTime(&gPreviewModifiedTime, &logFile.modifiedTime) == 0 &&
+        gPreviewModifiedTime == logFile.modifiedTime &&
         gPreviewContent == content;
 
     if (previewUnchanged)
@@ -2684,20 +2021,7 @@ void SaveWindowPlacement(HWND window)
     );
 }
 
-bool IsValidGameDirectory(const std::wstring& path)
-{
-    if (path.empty())
-    {
-        return false;
-    }
 
-    const fs::path gameDir(path);
-
-    return fs::is_regular_file(gameDir / L"cossacks.exe") &&
-        fs::is_regular_file(
-            gameDir / L"data" / L"scripts" / L"dmscript.global"
-        );
-}
 
 void ClearLoadedLogs()
 {
@@ -3033,73 +2357,7 @@ std::optional<std::wstring> DetectGameDirectory()
     return std::nullopt;
 }
 
-std::wstring NormalizeGameDirectory(const std::wstring& input)
-{
-    if (input.empty())
-    {
-        return {};
-    }
 
-    std::wstring path = input;
-
-    // Convert Unix-style separators to Windows separators.
-    std::replace(path.begin(), path.end(), L'/', L'\\');
-
-    // Remove trailing slashes, except for a root such as C:\.
-    while (path.size() > 3 && path.back() == L'\\')
-    {
-        path.pop_back();
-    }
-
-    // Resolve "." and ".." and make the path absolute.
-    wchar_t fullPath[32768]{};
-
-    DWORD fullLength = GetFullPathNameW(
-        path.c_str(),
-        ARRAYSIZE(fullPath),
-        fullPath,
-        nullptr
-    );
-
-    if (fullLength > 0 && fullLength < ARRAYSIZE(fullPath))
-    {
-        path = fullPath;
-    }
-
-    // Ask Windows for the real long-name representation.
-    // This usually restores the actual casing stored on disk:
-    // c:\program files (x86)\steam -> C:\Program Files (x86)\Steam
-    wchar_t longPath[32768]{};
-
-    DWORD longLength = GetLongPathNameW(
-        path.c_str(),
-        longPath,
-        ARRAYSIZE(longPath)
-    );
-
-    if (longLength > 0 && longLength < ARRAYSIZE(longPath))
-    {
-        path = longPath;
-    }
-
-    std::error_code error;
-    fs::path canonical = fs::weakly_canonical(path, error);
-    if (!error && !canonical.empty())
-    {
-        path = canonical.wstring();
-        std::replace(path.begin(), path.end(), L'/', L'\\');
-    }
-
-    // Drive letters should always be uppercase.
-    if (path.size() >= 2 && path[1] == L':')
-    {
-        path[0] = static_cast<wchar_t>(
-            std::towupper(path[0])
-            );
-    }
-
-    return path;
-}
 
 void LoadLogSortSetting()
 {
@@ -3155,49 +2413,6 @@ void UpdateAutoUpdateLogsMenu(HWND hWnd)
     );
 }
 
-void SortLogFiles()
-{
-    std::sort(
-        gLogFiles.begin(),
-        gLogFiles.end(),
-        [](const LogFileInfo& left, const LogFileInfo& right)
-        {
-            const LONG comparison = CompareFileTime(
-                &left.modifiedTime,
-                &right.modifiedTime
-            );
-
-            return gSortDescending
-                ? comparison > 0
-                : comparison < 0;
-        }
-    );
-}
-
-std::wstring FormatPreviewText(const std::wstring& text)
-{
-    std::wstring normalized = NormalizeLineEndings(text);
-    std::wstringstream input(normalized);
-
-    std::wstring line;
-    std::wstring result;
-    bool first = true;
-
-    while (std::getline(input, line))
-    {
-        if (!line.empty() && line.back() == L'\r') line.pop_back();
-
-        if (line.starts_with(L"ERR|") || line.starts_with(L"LOG|") || line.starts_with(L"TIM|"))
-            line = L"  " + line;
-
-        if (!first) result += L"\r\n";
-        result += line;
-        first = false;
-    }
-
-    return result;
-}
-
 bool SelectFirstCompileErrorLine()
 {
     const wchar_t* marker = L"CompileFramework() - compile global script error:";
@@ -3218,54 +2433,6 @@ bool SelectFirstCompileErrorLine()
     SendMessageW(hLogContent, EM_SCROLLCARET, 0, 0);
 
     return true;
-}
-
-LogSeverityCounts CountLogSeverity(const std::wstring& text)
-{
-    LogSeverityCounts counts;
-    bool hasCompileFrameworkCritical = false;
-    std::wstring normalized = NormalizeLineEndings(text);
-    std::wstringstream input(normalized);
-
-    std::wstring line;
-    while (std::getline(input, line))
-    {
-        if (!line.empty() && line.back() == L'\r') line.pop_back();
-
-        size_t firstText = line.find_first_not_of(L" \t");
-        std::wstring_view trimmed = firstText == std::wstring::npos
-            ? std::wstring_view()
-            : std::wstring_view(line).substr(firstText);
-
-        if (trimmed.starts_with(L"ERR") || trimmed.starts_with(L"ERROR"))
-        {
-            counts.errors++;
-        }
-
-        const bool hasSyntaxCritical =
-            trimmed.find(L"CompileFramework()") != std::wstring_view::npos &&
-            trimmed.find(L"compile global script error: Syntax error: Line:") != std::wstring_view::npos &&
-            trimmed.find(L"Column") != std::wstring_view::npos;
-
-        const bool hasCompileScriptError =
-            trimmed.find(L"Compile script error") != std::wstring_view::npos;
-
-        if (hasSyntaxCritical)
-        {
-            hasCompileFrameworkCritical = true;
-        }
-        else if (hasCompileScriptError)
-        {
-            counts.critical++;
-        }
-    }
-
-    if (hasCompileFrameworkCritical)
-    {
-        counts.critical = 1;
-    }
-
-    return counts;
 }
 
 void UpdateStatusLabels()
@@ -3438,7 +2605,10 @@ void UpdateErrorPane()
         return;
     }
 
-    std::wstring text = ResolveScriptErrorText(GetCaretLineText(hLogContent));
+    std::wstring text = core::ResolveScriptErrorText(
+        NormalizeGameDirectory(GetControlText(hBaseDir)),
+        GetCaretLineText(hLogContent)
+    );
 
     SetWindowTextW(hErrorPaneContent, text.c_str());
     ShowErrorPane();

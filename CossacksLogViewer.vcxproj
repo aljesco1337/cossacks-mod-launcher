@@ -80,6 +80,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -99,6 +100,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <DebugInformationFormat>None</DebugInformationFormat>
       <UseFullPaths>false</UseFullPaths>
@@ -122,6 +124,7 @@
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
     <Link>
@@ -138,6 +141,7 @@
       <PreprocessorDefinitions>NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalIncludeDirectories>$(ProjectDir)src;$(ProjectDir)src\windows;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <DebugInformationFormat>None</DebugInformationFormat>
       <UseFullPaths>false</UseFullPaths>
@@ -152,20 +156,29 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="CossacksLogViewer.h" />
-    <ClInclude Include="framework.h" />
-    <ClInclude Include="Resource.h" />
-    <ClInclude Include="targetver.h" />
+    <ClInclude Include="src\core\Types.h" />
+    <ClInclude Include="src\core\TextUtils.h" />
+    <ClInclude Include="src\core\LogModel.h" />
+    <ClInclude Include="src\core\LogParser.h" />
+    <ClInclude Include="src\core\GameDirectory.h" />
+    <ClInclude Include="src\windows\CossacksLogViewer.h" />
+    <ClInclude Include="src\windows\framework.h" />
+    <ClInclude Include="src\windows\Resource.h" />
+    <ClInclude Include="src\windows\targetver.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="CossacksLogViewer.cpp" />
+    <ClCompile Include="src\core\TextUtils.cpp" />
+    <ClCompile Include="src\core\LogModel.cpp" />
+    <ClCompile Include="src\core\LogParser.cpp" />
+    <ClCompile Include="src\core\GameDirectory.cpp" />
+    <ClCompile Include="src\windows\CossacksLogViewer.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="CossacksLogViewer.rc" />
+    <ResourceCompile Include="src\windows\CossacksLogViewer.rc" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="CossacksLogViewer.ico" />
-    <Image Include="small.ico" />
+    <Image Include="src\windows\CossacksLogViewer.ico" />
+    <Image Include="src\windows\small.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
