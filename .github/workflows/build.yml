@@ -1,0 +1,55 @@
+name: Build binaries
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            cmake_args: '-G "Visual Studio 17 2022" -A x64'
+            artifact_path: build/Release/
+          - os: ubuntu-24.04
+            cmake_args: '-DCMAKE_BUILD_TYPE=Release'
+            artifact_path: build/CossacksLogViewer
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Qt on Windows
+        if: runner.os == 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.11.2'
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Install dependencies on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential qt6-base-dev
+
+      - name: Configure
+        run: cmake -S . -B build ${{ matrix.cmake_args }}
+
+      - name: Compile
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: CossacksLogViewer-${{ matrix.os }}-x64
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
