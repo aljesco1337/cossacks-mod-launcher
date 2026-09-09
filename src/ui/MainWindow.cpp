@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "MainWindow.h"
 
 #include <QAction>
@@ -29,6 +35,10 @@
 
 #include <algorithm>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "core/GameDirectory.h"
 #include "core/LogModel.h"
 #include "core/LogParser.h"
@@ -55,6 +65,71 @@ std::wstring toWide(const QString& value)
 {
     return value.toStdWString();
 }
+
+#ifdef _WIN32
+std::optional<QString> readRegistryString(
+    HKEY root,
+    const wchar_t* subKey,
+    const wchar_t* valueName,
+    REGSAM extraFlags = 0)
+{
+    HKEY key = nullptr;
+
+    LONG result = RegOpenKeyExW(root, subKey, 0, KEY_READ | extraFlags, &key);
+    if (result != ERROR_SUCCESS)
+    {
+        return std::nullopt;
+    }
+
+    DWORD type = 0;
+    DWORD byteCount = 0;
+
+    result = RegQueryValueExW(key, valueName, nullptr, &type, nullptr, &byteCount);
+    if (result != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ))
+    {
+        RegCloseKey(key);
+        return std::nullopt;
+    }
+
+    std::wstring value(byteCount / sizeof(wchar_t), L'\0');
+
+    result = RegQueryValueExW(
+        key,
+        valueName,
+        nullptr,
+        &type,
+        reinterpret_cast<BYTE*>(value.data()),
+        &byteCount);
+
+    RegCloseKey(key);
+
+    if (result != ERROR_SUCCESS)
+    {
+        return std::nullopt;
+    }
+
+    while (!value.empty() && value.back() == L'\0')
+    {
+        value.pop_back();
+    }
+
+    if (type == REG_EXPAND_SZ)
+    {
+        wchar_t expanded[4096]{};
+        const DWORD expandedLength = ExpandEnvironmentStringsW(
+            value.c_str(),
+            expanded,
+            4096);
+
+        if (expandedLength > 0 && expandedLength <= 4096)
+        {
+            value.assign(expanded);
+        }
+    }
+
+    return value.empty() ? std::nullopt : std::optional<QString>(fromWide(value));
+}
+#endif
 
 } // namespace
 
@@ -841,15 +916,24 @@ void MainWindow::addRecentGameDir(const QString& path)
 
 std::optional<QString> MainWindow::detectSteamGameDirectory()
 {
-    const QString home = QDir::homePath();
+    QStringList roots;
 
-    const QStringList roots = {
-        home + QStringLiteral("/.local/share/Steam"),
-        home + QStringLiteral("/.steam/steam"),
-        home + QStringLiteral("/.steam/root"),
-        home + QStringLiteral("/.var/app/com.valvesoftware.Steam/.local/share/Steam"),
-        home + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam"),
-    };
+#ifdef _WIN32
+    if (const auto steamPath = readRegistryString(
+            HKEY_CURRENT_USER,
+            L"Software\\Valve\\Steam",
+            L"SteamPath"))
+    {
+        roots << *steamPath;
+    }
+#else
+    const QString home = QDir::homePath();
+    roots << home + QStringLiteral("/.local/share/Steam")
+          << home + QStringLiteral("/.steam/steam")
+          << home + QStringLiteral("/.steam/root")
+          << home + QStringLiteral("/.var/app/com.valvesoftware.Steam/.local/share/Steam")
+          << home + QStringLiteral("/.var/app/com.valvesoftware.Steam/data/Steam");
+#endif
 
     auto readFile = [](const QString& path) -> QString
     {
@@ -927,6 +1011,37 @@ std::optional<QString> MainWindow::detectSteamGameDirectory()
     return std::nullopt;
 }
 
+std::optional<QString> MainWindow::detectGogGameDirectory()
+{
+#ifdef _WIN32
+    constexpr wchar_t gogKey[] =
+        L"SOFTWARE\\WOW6432Node\\GOG.com\\Games\\1797227701";
+
+    const wchar_t* valueNames[] = {
+        L"path",
+        L"PATH",
+        L"InstallLocation"
+    };
+
+    for (const wchar_t* valueName : valueNames)
+    {
+        if (const auto path = readRegistryString(
+                HKEY_LOCAL_MACHINE,
+                gogKey,
+                valueName,
+                KEY_WOW64_32KEY))
+        {
+            if (core::IsValidGameDirectory(toWide(*path)))
+            {
+                return fromWide(core::NormalizeGameDirectory(toWide(*path)));
+            }
+        }
+    }
+#endif
+
+    return std::nullopt;
+}
+
 std::optional<QString> MainWindow::detectGameDirectory()
 {
     if (core::IsValidGameDirectory(toWide(gameDirCombo_->currentText())))
@@ -944,6 +1059,11 @@ std::optional<QString> MainWindow::detectGameDirectory()
     if (const auto steam = detectSteamGameDirectory())
     {
         return steam;
+    }
+
+    if (const auto gog = detectGogGameDirectory())
+    {
+        return gog;
     }
 
     return std::nullopt;

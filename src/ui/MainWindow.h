@@ -20,7 +20,7 @@ class QTextEdit;
 class QTimer;
 class QAction;
 
-// Qt-based re-implementation of the Windows UI, sharing the same core logic.
+// Cross-platform Qt UI sharing the same core logic on every platform.
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -66,6 +66,7 @@ private:
 
     std::optional<QString> detectGameDirectory();
     std::optional<QString> detectSteamGameDirectory();
+    std::optional<QString> detectGogGameDirectory();
 
     // Widgets
     QComboBox* gameDirCombo_ = nullptr;
