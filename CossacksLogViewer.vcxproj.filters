@@ -40,7 +40,7 @@
     <ClInclude Include="src\windows\targetver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="src\windows\Resource.h">
+    <ClInclude Include="src\windows\resource.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="src\windows\CossacksLogViewer.h">

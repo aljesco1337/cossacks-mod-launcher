@@ -40,7 +40,7 @@ if(WIN32)
         src/windows/CossacksLogViewer.cpp
         src/windows/CossacksLogViewer.h
         src/windows/CossacksLogViewer.rc
-        src/windows/Resource.h
+        src/windows/resource.h
         src/windows/framework.h
         src/windows/targetver.h
     )

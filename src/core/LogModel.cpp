@@ -67,7 +67,12 @@ std::wstring FormatModifiedTime(const fs::file_time_type& time)
 {
     using namespace std::chrono;
 
-    const auto systemTime = file_clock::to_sys(time);
+    // Portable conversion to system time. The filesystem clock has an
+    // implementation-defined epoch, so translate through the offset between
+    // the two clocks rather than relying on a non-portable to_sys member.
+    const auto systemTime = time_point_cast<system_clock::duration>(
+        time - fs::file_time_type::clock::now() + system_clock::now()
+    );
     const std::time_t value = system_clock::to_time_t(systemTime);
 
     std::tm local{};
