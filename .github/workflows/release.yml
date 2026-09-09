@@ -20,22 +20,19 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.11.2"
+          version: "6.11.0"
           arch: "win64_msvc2022_64"
-          modules: ""
           cache: true
 
       - name: Configure CMake
-        run: >
-          cmake
-          -S .
-          -B build
-          -G "Visual Studio 17 2022"
-          -A x64
-          -DCMAKE_PREFIX_PATH="$env:Qt6_DIR"
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64
 
       - name: Build Release
-        run: cmake --build build --config Release --parallel
+        run: |
+          cmake --build build --config Release --parallel
 
       - name: Verify executable
         shell: pwsh
@@ -49,12 +46,13 @@ jobs:
 
           Write-Host "Found: $exe"
 
-      - name: Prepare release package
+      - name: Prepare package
         shell: pwsh
         run: |
           $package = "CossacksLogViewer-${{ github.ref_name }}-windows-x64"
 
-          New-Item -ItemType Directory -Force -Path "release\$package" | Out-Null
+          New-Item -ItemType Directory -Force `
+            -Path "release\$package" | Out-Null
 
           Copy-Item `
             "build\Release\*" `
