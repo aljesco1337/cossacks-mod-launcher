@@ -632,6 +632,13 @@ void MainWindow::showSelectedLog()
 
     updatingPreview_ = true;
 
+    // QTextEdit::setPlainText() inserts the new text using the character format
+    // that is active at the start of the existing document. Because the
+    // previous log may have been highlighted (red "ERROR" prefix at position
+    // zero), that format would otherwise be applied to every character of the
+    // newly loaded log. Resetting the document first restores the default
+    // format, so applyPreviewHighlighting() only styles real error lines.
+    preview_->document()->clear();
     preview_->setPlainText(fromWide(content));
     applyPreviewHighlighting();
 
