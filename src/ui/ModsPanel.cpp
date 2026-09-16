@@ -182,6 +182,12 @@ QString ModsPanel::statusText() const
     case mods::ModManager::Status::InstalledUnknown:
         return tr("Installed, but the version could not be determined.");
 
+    case mods::ModManager::Status::InstalledFromWorkshop:
+        return release && !release->workshopId.empty()
+            ? tr("Already installed from the Steam Workshop (item %1).")
+                  .arg(Text(release->workshopId))
+            : tr("Already installed from the Steam Workshop.");
+
     case mods::ModManager::Status::UpToDate:
         return tr("Installed version %1 - up to date.").arg(installedLabel);
 
@@ -214,6 +220,13 @@ QString ModsPanel::actionText() const
         return tr("Install");
     }
 
+    // Nothing to install, but the game's list can be rebuilt from the workshop
+    // folders that are present.
+    if (manager_->status() == mods::ModManager::Status::InstalledFromWorkshop)
+    {
+        return tr("Restore mod list");
+    }
+
     const QString name = Text(release->name);
     const QString version = Text(release->versionLabel);
     const bool hasVersion = !version.isEmpty();
@@ -242,6 +255,12 @@ QString ModsPanel::actionToolTip() const
     if (!manager_->hasGameFolder())
     {
         return tr("Select a valid Cossacks 3 folder first.");
+    }
+
+    if (manager_->status() == mods::ModManager::Status::InstalledFromWorkshop)
+    {
+        return tr("Steam already provides this mod, so this only writes the workshop "
+                  "entries back into the game's mod list.");
     }
 
     if (manager_->stage() != mods::ModManager::Stage::None)
@@ -281,6 +300,12 @@ bool ModsPanel::actionEnabled() const
     if (manager_->status() == mods::ModManager::Status::Checking || !manager_->hasGameFolder())
     {
         return false;
+    }
+
+    // Rebuilding the list needs no download address.
+    if (manager_->status() == mods::ModManager::Status::InstalledFromWorkshop)
+    {
+        return true;
     }
 
     const core::ModRelease* release = manager_->release();

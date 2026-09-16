@@ -39,6 +39,7 @@ add_library(clv_core STATIC
     src/core/LogModel.cpp
     src/core/LogParser.cpp
     src/core/GameDirectory.cpp
+    src/core/ModList.cpp
     src/core/ModManifest.cpp
     src/core/ModsIni.cpp
     src/core/Workshop.cpp

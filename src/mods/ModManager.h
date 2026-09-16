@@ -6,6 +6,7 @@
 
 #include <optional>
 
+#include "core/ModList.h"
 #include "core/ModManifest.h"
 #include "mods/ModDownloader.h"
 
@@ -29,6 +30,7 @@ public:
         Checking,          // manifest request in flight
         NotInstalled,      // the manifest offers a mod that is not installed
         InstalledUnknown,  // a mod folder exists but its version is unreadable
+        InstalledFromWorkshop, // Steam already provides the mod, nothing to install
         UpToDate,
         UpdateAvailable,
         CheckFailed,       // no manifest could be fetched and none is cached
@@ -88,6 +90,9 @@ private:
     void RefreshInstalledState();
     void UpdateStatusFromVersions();
     void HandleCheckFailure(const QString& error);
+
+    // The mods the repository publishes as compatible with the installed one.
+    core::ModListOptions BuildModListOptions() const;
 
     void OnManifestFetched(const QByteArray& body, const QByteArray& etag);
     void OnManifestNotModified();

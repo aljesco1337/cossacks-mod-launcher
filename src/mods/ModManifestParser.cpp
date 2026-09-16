@@ -1,5 +1,6 @@
 #include "ModManifestParser.h"
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -66,6 +67,25 @@ std::optional<core::ModManifest> ParseModManifest(const QByteArray& json, QStrin
 
     core::ModManifest manifest;
     manifest.schemaVersion = root.value(QStringLiteral("schemaVersion")).toInt();
+
+    // Mods known to work together with this one. Optional, so a manifest without
+    // the member still parses; non-string entries are skipped.
+    const QJsonArray compatible = root.value(QStringLiteral("compatibleMods")).toArray();
+
+    for (const QJsonValue& value : compatible)
+    {
+        if (!value.isString())
+        {
+            continue;
+        }
+
+        const QString entry = value.toString().trimmed();
+
+        if (!entry.isEmpty())
+        {
+            manifest.compatibleMods.push_back(entry.toStdString());
+        }
+    }
 
     const QJsonObject mods = modsValue.toObject();
 

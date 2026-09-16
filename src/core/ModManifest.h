@@ -35,6 +35,15 @@ struct ModManifest
 {
     int schemaVersion = 0;
     std::vector<ModRelease> mods; // sorted by id for stable iteration
+
+    // Mods that are known to work together with this one, e.g. ["3123019560"].
+    //
+    // During an installation every mod the launcher lists is written switched off
+    // except the installed mod itself and these, see core/ModList.h. Optional:
+    // a manifest without the member simply has no compatible mods.
+    //
+    // Entries match a folder name or a workshop id, see core/ModList.h.
+    std::vector<std::string> compatibleMods;
 };
 
 // State of the mod as it is installed in the game directory. Persisted as

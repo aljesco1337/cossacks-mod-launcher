@@ -23,4 +23,13 @@ std::filesystem::path WorkshopContentFolder(const std::filesystem::path& gameDir
 // name. Empty when there is no workshop folder. Not recursive.
 std::vector<std::string> EnumerateWorkshopModDirs(const std::filesystem::path& gameDirectory);
 
+// True when a single workshop item is downloaded in the library the game is
+// installed in, i.e. "<library>/steamapps/workshop/content/<appId>/<id>" exists.
+//
+// "publishedFileId" comes from the manifest and is therefore validated before it
+// is used as a path component; an unusable id reports false.
+bool IsWorkshopItemDownloaded(
+    const std::filesystem::path& gameDirectory,
+    const std::string& publishedFileId);
+
 } // namespace core

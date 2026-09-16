@@ -40,11 +40,19 @@ struct ModsIniDocument
     std::vector<ModsIniEntry> entries;
 };
 
-// A record to make sure the file lists, in the form the file uses.
-struct ModsIniRecord
+// What should happen to one record when the launcher writes the list.
+enum class ModsIniState
 {
-    std::string dir;       // relative to the game folder
-    bool enabled = false;  // written inverted, see ModsIniFlagFor()
+    Disabled,  // written as switched off; an existing record is updated
+    Enabled,   // written as switched on; an existing record is updated
+    Keep,      // an existing record is left exactly as it is, and added switched
+               // on when the file does not have it yet
+};
+
+struct ModsIniRecordState
+{
+    std::string dir;  // relative to the game folder
+    ModsIniState state = ModsIniState::Disabled;
 };
 
 inline constexpr const char* kModsIniFileName = "mods.ini";
@@ -88,29 +96,23 @@ bool AddModsIniEntry(
     std::string& updatedText,
     std::string& error);
 
-// Appends every record that is not listed yet, in one pass. "updatedText"
-// stays empty when nothing had to be added.
-bool AddModsIniRecords(
+// Brings the records named by "states" into the requested state. Existing records
+// are updated in place, missing ones are appended, and everything else in the file
+// - other records, comments, unknown keys - is preserved. "updatedText" stays
+// empty when nothing had to change.
+bool ApplyModsIniStates(
     const std::string& text,
-    const std::vector<ModsIniRecord>& records,
+    const std::vector<ModsIniRecordState>& states,
     std::string& updatedText,
     std::string& error);
 
-// Reads "<modsFolder>/mods.ini", appends the records that are missing and
-// writes the file back once. Nothing is written when everything is already
-// listed. "added" reports whether the file was modified.
-bool EnsureModsIniRecords(
+// Reads "<modsFolder>/mods.ini", applies the states and writes the file back once.
+// Nothing is written when every record is already as requested. "changed" reports
+// whether the file was modified.
+bool EnsureModsIniStates(
     const std::filesystem::path& modsFolder,
-    const std::vector<ModsIniRecord>& records,
-    bool& added,
-    std::string& error);
-
-// Convenience wrapper for a single record.
-bool EnsureModsIniEntry(
-    const std::filesystem::path& modsFolder,
-    const std::string& gameRelativeDir,
-    bool enabled,
-    bool& added,
+    const std::vector<ModsIniRecordState>& states,
+    bool& changed,
     std::string& error);
 
 } // namespace core

@@ -127,6 +127,7 @@ turns into the action that is currently useful:
 | --- | --- |
 | No valid game folder selected | *Install Renaissance 0.33*, disabled |
 | Nothing installed | *Install Renaissance 0.33* |
+| Already provided by the Steam Workshop | *Restore mod list* |
 | Installed version is current | *Reinstall Renaissance* |
 | A newer version exists | *Update to version 0.34* (highlighted) |
 | Download running | *Cancel* plus a progress bar |
@@ -159,10 +160,18 @@ does not exist:
   installed mod is written as `dis = False`, so it is active right away. The
   mapping lives in `core/ModsIni.h` (`ModsIniFlagFor`, `kModsIniEnabledFlag`).
 - **Steam workshop items are listed too.** If `..\..\workshop\content\333420`
-  exists relative to the game folder, every folder inside it is added to the list
-  with `dis = True`, so the newly installed mod keeps the highest entry and the
-  workshop items are listed but switched off. The step is skipped when that
+  exists relative to the game folder, every folder inside it is added to the list.
+  Whether such a record is switched on follows the rules below: only the installed
+  mod and the mods the manifest calls compatible are. The step is skipped when that
   folder does not exist (GOG install, or nothing downloaded).
+- **A workshop copy of the mod itself is used instead of installing one.** When
+  the manifest's `workshopId` (`3398700006`) is found in
+  `..\..\workshop\content\333420`, the card reports *Already installed from the
+  Steam Workshop* and nothing is downloaded or unpacked - Steam keeps that copy
+  up to date. The button becomes *Restore mod list*, which rebuilds a missing
+  `mods.ini` from the workshop folders and writes no mod of its own. An
+  installation this launcher made earlier always wins over that check, so an
+  existing local copy is still compared by version.
 - An existing record is never rewritten. A mod the user enabled or disabled by
   hand keeps that state and the records of other mods are left alone.
 - Unknown sections, comments, `[*]` arrays and the file's line endings are all
@@ -173,6 +182,39 @@ does not exist:
 
 If the list cannot be updated, the mod files are still installed and the reason
 is reported next to the button.
+
+### Which mods may be switched on
+
+During an installation every mod the launcher lists is written switched off
+(`dis = True`), **except** two groups:
+
+- the **installed mod** itself - that is what the launcher is for - and
+- the mods `manifest.json` publishes as **compatible**, which are known to work
+  together with it. Their records keep the state they already have, so a compatible
+  mod the user switched off stays off.
+
+Every other mod that ends up in the list is switched off, an existing record
+included - a mod that would clash with the installed one cannot stay active.
+Nothing else in the file is touched.
+
+`compatibleMods` lives in `manifest.json` on the `distribution` branch:
+
+```jsonc
+{
+  "schemaVersion": 1,
+  "compatibleMods": [ "3123019560" ],   // optional
+  "mods": { }
+}
+```
+
+An entry matches either the complete `dir` value or just its last component,
+compared without regard to case or separator style. All of these name the same
+workshop item, and `Renaissance` or `mods\Renaissance` name a folder installed by
+the launcher:
+
+```json
+"compatibleMods": [ "3398700006", "..\..\workshop\content\333420\3398700006" ]
+```
 
 ### When updates are checked
 
@@ -195,9 +237,13 @@ https://raw.githubusercontent.com/aljesco1337/cossacks-mod-launcher/distribution
 ```jsonc
 {
   "schemaVersion": 1,
+
+  // optional: mods known to work together with this one (see below)
+  "compatibleMods": [ "3123019560" ],
+
   "mods": {
     "ren": {
-      "workshopId": "3398700006",   // informational, not used yet
+      "workshopId": "3398700006",   // detects the Steam Workshop copy of the mod
       "name": "Renaissance",
       "versionLabel": "0.33",       // shown to the user
       "versionNumber": 330,          // used to decide whether an update exists
@@ -267,6 +313,7 @@ src/
 │   ├── LogModel.h/.cpp
 │   ├── LogParser.h/.cpp
 │   ├── GameDirectory.h/.cpp
+│   ├── ModList.h/.cpp       # keeps mods/mods.ini in sync with the folders
 │   ├── ModManifest.h/.cpp   # manifest entry types and version comparison
 │   ├── ModsIni.h/.cpp       # parser for the game's mods/mods.ini list
 │   ├── Workshop.h/.cpp      # Steam workshop folders relative to the game

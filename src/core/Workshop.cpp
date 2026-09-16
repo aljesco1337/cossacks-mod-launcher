@@ -1,6 +1,7 @@
 #include "Workshop.h"
 
 #include <algorithm>
+#include <cctype>
 #include <system_error>
 
 #include "PathUtils.h"
@@ -17,6 +18,20 @@ fs::path WorkshopContentCandidate(const fs::path& gameDirectory)
 {
     return (gameDirectory / ".." / ".." / "workshop" / "content" / kCossacksSteamAppId)
         .lexically_normal();
+}
+
+// Steam ids are decimal, so anything else must not reach the filesystem.
+bool IsPublishedFileId(const std::string& value)
+{
+    if (value.empty() || value.size() > 20)
+    {
+        return false;
+    }
+
+    return std::all_of(
+        value.begin(),
+        value.end(),
+        [](unsigned char character) { return std::isdigit(character) != 0; });
 }
 
 } // namespace
@@ -78,6 +93,27 @@ std::vector<std::string> EnumerateWorkshopModDirs(const std::filesystem::path& g
     std::sort(dirs.begin(), dirs.end());
 
     return dirs;
+}
+
+bool IsWorkshopItemDownloaded(
+    const std::filesystem::path& gameDirectory,
+    const std::string& publishedFileId)
+{
+    if (!IsPublishedFileId(publishedFileId))
+    {
+        return false;
+    }
+
+    const fs::path contentFolder = WorkshopContentFolder(gameDirectory);
+
+    if (contentFolder.empty())
+    {
+        return false;
+    }
+
+    std::error_code ec;
+
+    return fs::is_directory(contentFolder / publishedFileId, ec);
 }
 
 } // namespace core

@@ -12,7 +12,9 @@
 #include "ModManifestParser.h"
 #include "ModStateStore.h"
 #include "core/GameDirectory.h"
+#include "core/ModList.h"
 #include "core/ModManifest.h"
+#include "core/Workshop.h"
 
 namespace mods {
 
@@ -122,6 +124,26 @@ void ModManager::LoadCachedManifest()
     }
 }
 
+core::ModListOptions ModManager::BuildModListOptions() const
+{
+    core::ModListOptions options;
+
+    // The installed mod is switched on by the list layer itself; what is left to
+    // decide here is which other mods work together with it, and how the mod is
+    // recognised when the workshop provides it.
+    if (manifest_)
+    {
+        options.compatibleMods = manifest_->compatibleMods;
+    }
+
+    if (release_)
+    {
+        options.installedModWorkshopId = release_->workshopId;
+    }
+
+    return options;
+}
+
 void ModManager::ApplyManifest(const core::ModManifest& manifest)
 {
     manifest_ = manifest;
@@ -204,7 +226,22 @@ void ModManager::UpdateStatusFromVersions()
     const bool folderHasContent = modDirectory.exists() &&
         !modDirectory.entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty();
 
-    status_ = folderHasContent ? Status::InstalledUnknown : Status::NotInstalled;
+    if (folderHasContent)
+    {
+        status_ = Status::InstalledUnknown;
+        return;
+    }
+
+    // Nothing local: when Steam already provides this mod, a second copy in the
+    // game's "mods" folder would only duplicate it.
+    if (!release_->workshopId.empty() &&
+        core::IsWorkshopItemDownloaded(ToPath(gameDirectory_), release_->workshopId))
+    {
+        status_ = Status::InstalledFromWorkshop;
+        return;
+    }
+
+    status_ = Status::NotInstalled;
 }
 
 void ModManager::CheckForUpdates(bool userInitiated)
@@ -230,6 +267,39 @@ void ModManager::InstallOrUpdate()
 {
     if (isBusy() || !release_ || !hasGameFolder())
     {
+        return;
+    }
+
+    if (status_ == Status::InstalledFromWorkshop)
+    {
+        // Nothing to download or unpack: Steam's copy is the installation. The
+        // game's list is still rebuilt, so a "mods.ini" that was deleted comes
+        // back with the workshop items in it.
+        const QString name = Text(release_->name);
+
+        const core::ModListOptions options = BuildModListOptions();
+
+        bool changed = false;
+        std::string listError;
+
+        if (!core::ListWorkshopMods(ToPath(gameDirectory_), options, changed, listError))
+        {
+            emit Notification(Tr("the game's mod list could not be updated (%1)")
+                                  .arg(QString::fromStdString(listError)));
+        }
+        else if (changed)
+        {
+            emit Notification(
+                Tr("%1 is already installed through the Steam Workshop; the game's mod list was restored")
+                    .arg(name));
+        }
+        else
+        {
+            emit Notification(
+                Tr("%1 is already installed through the Steam Workshop").arg(name));
+        }
+
+        emit StateChanged();
         return;
     }
 
@@ -385,8 +455,10 @@ void ModManager::RunInstall()
     }
 
     const core::ModRelease release = *release_;
+    const core::ModListOptions options = BuildModListOptions();
+
     const ModInstaller::Result result =
-        ModInstaller::Install(gameDirectory_, release, archivePath, {});
+        ModInstaller::Install(gameDirectory_, release, archivePath, options, {});
 
     QFile::remove(archivePath);
 

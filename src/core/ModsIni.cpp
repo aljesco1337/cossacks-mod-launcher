@@ -224,6 +224,87 @@ bool InsideModsElement(const std::vector<std::string>& structStack)
         structStack.back() == "[*]";
 }
 
+// Where one element of the "mods" list sits in the file, so its "dis" value can be
+// updated without touching anything else.
+struct Element
+{
+    std::string dir;
+    std::size_t beginLine = kNotFound;
+    std::size_t endLine = kNotFound;
+    std::size_t dirLine = kNotFound;
+    std::size_t disLine = kNotFound;
+};
+
+bool FindElements(const std::vector<std::string>& lines, std::vector<Element>& elements, std::string& error)
+{
+    elements.clear();
+    error.clear();
+
+    std::vector<std::string> structStack;
+    std::size_t current = kNotFound;
+
+    for (std::size_t index = 0; index < lines.size(); index++)
+    {
+        const Token token = Tokenize(lines[index]);
+
+        switch (token.kind)
+        {
+        case TokenKind::StructBegin:
+            structStack.push_back(token.name);
+
+            if (InsideModsElement(structStack))
+            {
+                elements.push_back(Element{});
+                current = elements.size() - 1;
+                elements[current].beginLine = index;
+            }
+            break;
+
+        case TokenKind::StructEnd:
+            if (InsideModsElement(structStack) && current != kNotFound)
+            {
+                elements[current].endLine = index;
+                current = kNotFound;
+            }
+
+            if (structStack.empty())
+            {
+                error = "the mod list has more \"struct.end\" lines than \"struct.begin\" lines";
+                return false;
+            }
+
+            structStack.pop_back();
+            break;
+
+        case TokenKind::Value:
+            if (current != kNotFound)
+            {
+                if (EqualsIgnoreCase(token.key, "dir"))
+                {
+                    elements[current].dir = token.value;
+                    elements[current].dirLine = index;
+                }
+                else if (EqualsIgnoreCase(token.key, "dis"))
+                {
+                    elements[current].disLine = index;
+                }
+            }
+            break;
+
+        case TokenKind::Ignored:
+            break;
+        }
+    }
+
+    if (!structStack.empty())
+    {
+        error = "the mod list has an unterminated \"struct.begin\" block";
+        return false;
+    }
+
+    return true;
+}
+
 std::string BuildSkeleton(const std::string& relativeDir, bool enabled, const std::string& lineEnding)
 {
     const std::string flag = ModsIniFlagFor(enabled);
@@ -540,25 +621,56 @@ bool AddModsIniEntry(
     return true;
 }
 
-bool AddModsIniRecords(
+bool ApplyModsIniStates(
     const std::string& text,
-    const std::vector<ModsIniRecord>& records,
+    const std::vector<ModsIniRecordState>& states,
     std::string& updatedText,
     std::string& error)
 {
     updatedText.clear();
     error.clear();
 
-    // Each record is applied to the result of the previous one, so the caller
-    // pays for a single file write no matter how many records there are.
     std::string current = text;
     bool changed = false;
 
-    for (const ModsIniRecord& record : records)
+    // 1. Append the records the file does not have yet. One that has to be created
+    //    is written switched on unless it is meant to be off, so a compatible mod
+    //    is usable without the user having to add it by hand.
+    for (const ModsIniRecordState& state : states)
     {
+        const std::string dir = Trim(state.dir);
+
+        if (dir.empty())
+        {
+            continue;
+        }
+
+        ModsIniDocument document;
+
+        if (!ParseModsIni(current, document, error))
+        {
+            return false;
+        }
+
+        bool known = false;
+
+        for (const ModsIniEntry& entry : document.entries)
+        {
+            if (SameModsIniDir(entry.dir, dir))
+            {
+                known = true;
+                break;
+            }
+        }
+
+        if (known)
+        {
+            continue;
+        }
+
         std::string next;
 
-        if (!AddModsIniEntry(current, record.dir, record.enabled, next, error))
+        if (!AddModsIniEntry(current, dir, state.state != ModsIniState::Disabled, next, error))
         {
             return false;
         }
@@ -570,21 +682,104 @@ bool AddModsIniRecords(
         }
     }
 
+    // 2. Update the records that are already there.
+    std::vector<std::string> lines = SplitLines(current);
+    std::vector<Element> elements;
+
+    if (!FindElements(lines, elements, error))
+    {
+        return false;
+    }
+
+    struct Edit
+    {
+        std::size_t index = 0;
+        std::vector<std::string> replacement;
+    };
+
+    std::vector<Edit> edits;
+
+    for (const ModsIniRecordState& state : states)
+    {
+        if (state.state == ModsIniState::Keep)
+        {
+            continue;
+        }
+
+        const std::string flag = ModsIniFlagFor(state.state == ModsIniState::Enabled);
+
+        for (const Element& element : elements)
+        {
+            if (!SameModsIniDir(element.dir, state.dir))
+            {
+                continue;
+            }
+
+            if (element.disLine == kNotFound)
+            {
+                // No flag at all yet: add one beside "dir".
+                if (element.beginLine == kNotFound)
+                {
+                    break;
+                }
+
+                const std::size_t anchor = element.dirLine != kNotFound
+                    ? element.dirLine
+                    : element.beginLine;
+
+                const std::string indent = element.dirLine != kNotFound
+                    ? IndentationOf(lines[element.dirLine])
+                    : IndentationOf(lines[element.beginLine]) + "   ";
+
+                edits.push_back(Edit{ anchor, { lines[anchor], indent + "dis = " + flag } });
+            }
+            else
+            {
+                const std::string rebuilt =
+                    IndentationOf(lines[element.disLine]) + "dis = " + flag;
+
+                if (lines[element.disLine] != rebuilt)
+                {
+                    edits.push_back(Edit{ element.disLine, { rebuilt } });
+                }
+            }
+
+            break;
+        }
+    }
+
+    // Applied from the bottom, so the indices of the remaining edits stay valid.
+    std::sort(edits.begin(), edits.end(), [](const Edit& left, const Edit& right)
+    {
+        return left.index > right.index;
+    });
+
+    for (const Edit& edit : edits)
+    {
+        lines.erase(lines.begin() + static_cast<std::ptrdiff_t>(edit.index));
+        lines.insert(
+            lines.begin() + static_cast<std::ptrdiff_t>(edit.index),
+            edit.replacement.begin(),
+            edit.replacement.end());
+
+        changed = true;
+    }
+
     if (changed)
     {
-        updatedText = std::move(current);
+        updatedText = JoinLines(lines, DetectLineEnding(current));
     }
 
     return true;
 }
 
-bool EnsureModsIniRecords(
+bool EnsureModsIniStates(
     const std::filesystem::path& modsFolder,
-    const std::vector<ModsIniRecord>& records,
-    bool& added,
+    const std::vector<ModsIniRecordState>& states,
+    bool& changed,
     std::string& error)
 {
-    added = false;
+    changed = false;
 
     const fs::path filePath = modsFolder / kModsIniFileName;
 
@@ -613,14 +808,14 @@ bool EnsureModsIniRecords(
 
     std::string updated;
 
-    if (!AddModsIniRecords(bytes, records, updated, error))
+    if (!ApplyModsIniStates(bytes, states, updated, error))
     {
         return false;
     }
 
     if (updated.empty())
     {
-        // Already listed.
+        // Everything is already as requested.
         return true;
     }
 
@@ -651,22 +846,8 @@ bool EnsureModsIniRecords(
         return false;
     }
 
-    added = true;
+    changed = true;
     return true;
-}
-
-bool EnsureModsIniEntry(
-    const std::filesystem::path& modsFolder,
-    const std::string& gameRelativeDir,
-    bool enabled,
-    bool& added,
-    std::string& error)
-{
-    return EnsureModsIniRecords(
-        modsFolder,
-        { ModsIniRecord{ gameRelativeDir, enabled } },
-        added,
-        error);
 }
 
 } // namespace core
