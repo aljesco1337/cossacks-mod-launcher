@@ -1,0 +1,119 @@
+#include "ModManifestParser.h"
+
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonParseError>
+#include <QJsonValue>
+#include <QString>
+#include <QStringList>
+
+#include <algorithm>
+
+namespace mods {
+
+namespace {
+
+// Manifest text members are UTF-8. Numbers are accepted as well, so a manifest
+// that publishes an id as a number does not break the launcher.
+std::string TextMember(const QJsonObject& object, const char* key)
+{
+    const QJsonValue value = object.value(QLatin1String(key));
+
+    if (value.isString())
+    {
+        return value.toString().toUtf8().toStdString();
+    }
+
+    if (value.isDouble())
+    {
+        return QString::number(value.toDouble(), 'f', 0).toUtf8().toStdString();
+    }
+
+    return {};
+}
+
+} // namespace
+
+std::optional<core::ModManifest> ParseModManifest(const QByteArray& json, QString& error)
+{
+    error.clear();
+
+    QJsonParseError parseError{};
+    const QJsonDocument document = QJsonDocument::fromJson(json, &parseError);
+
+    if (parseError.error != QJsonParseError::NoError)
+    {
+        error = QStringLiteral("the manifest is not valid JSON (offset %1: %2)")
+                    .arg(parseError.offset)
+                    .arg(parseError.errorString());
+        return std::nullopt;
+    }
+
+    if (!document.isObject())
+    {
+        error = QStringLiteral("the manifest is not a JSON object");
+        return std::nullopt;
+    }
+
+    const QJsonObject root = document.object();
+    const QJsonValue modsValue = root.value(QStringLiteral("mods"));
+
+    if (!modsValue.isObject())
+    {
+        error = QStringLiteral("the manifest has no \"mods\" object");
+        return std::nullopt;
+    }
+
+    core::ModManifest manifest;
+    manifest.schemaVersion = root.value(QStringLiteral("schemaVersion")).toInt();
+
+    const QJsonObject mods = modsValue.toObject();
+
+    for (auto it = mods.constBegin(); it != mods.constEnd(); ++it)
+    {
+        if (!it.value().isObject())
+        {
+            continue;
+        }
+
+        const QJsonObject entry = it.value().toObject();
+
+        core::ModRelease release;
+        release.id = it.key().toUtf8().toStdString();
+        release.workshopId = TextMember(entry, "workshopId");
+        release.name = TextMember(entry, "name");
+        release.versionLabel = TextMember(entry, "versionLabel");
+        release.versionNumber = entry.value(QStringLiteral("versionNumber")).toInt();
+        release.updatedAt = TextMember(entry, "updatedAt");
+        release.downloadUrl = TextMember(entry, "downloadUrl");
+        release.sha256 = TextMember(entry, "sha256");
+        release.size = static_cast<long long>(entry.value(QStringLiteral("size")).toDouble());
+        release.installDir = TextMember(entry, "installDir");
+        release.archiveRoot = TextMember(entry, "archiveRoot");
+
+        if (release.name.empty())
+        {
+            release.name = release.id;
+        }
+
+        manifest.mods.push_back(std::move(release));
+    }
+
+    if (manifest.mods.empty())
+    {
+        error = QStringLiteral("the manifest does not list any mod");
+        return std::nullopt;
+    }
+
+    std::sort(
+        manifest.mods.begin(),
+        manifest.mods.end(),
+        [](const core::ModRelease& left, const core::ModRelease& right)
+        {
+            return left.id < right.id;
+        });
+
+    return manifest;
+}
+
+} // namespace mods

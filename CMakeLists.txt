@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(CossacksLogViewer VERSION 0.1 LANGUAGES CXX)
+# C is required for the vendored miniz ZIP reader.
+project(CossacksLogViewer VERSION 0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,6 +12,26 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # ---------------------------------------------------------------------------
+# Vendored ZIP reader (miniz, MIT - see src/third_party/miniz/LICENSE)
+# ---------------------------------------------------------------------------
+add_library(clv_miniz STATIC
+    src/third_party/miniz/miniz.c
+)
+
+target_include_directories(clv_miniz
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/miniz
+)
+
+# Only decompression and in-memory reading are used, which keeps the compiled
+# size down. miniz stays a C file and is built without the project's warning
+# flags to avoid warnings from third party code.
+target_compile_definitions(clv_miniz PRIVATE
+    MINIZ_NO_DEFLATE_APIS
+    MINIZ_NO_STDIO
+)
+
+# ---------------------------------------------------------------------------
 # Core library (platform independent)
 # ---------------------------------------------------------------------------
 add_library(clv_core STATIC
@@ -18,11 +39,18 @@ add_library(clv_core STATIC
     src/core/LogModel.cpp
     src/core/LogParser.cpp
     src/core/GameDirectory.cpp
+    src/core/ModManifest.cpp
+    src/core/ZipArchive.cpp
 )
 
 target_include_directories(clv_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(clv_core
+    PRIVATE
+        clv_miniz
 )
 
 if(MSVC)
@@ -34,32 +62,73 @@ endif()
 # ---------------------------------------------------------------------------
 # UI (Qt Widgets - common cross-platform UI)
 # ---------------------------------------------------------------------------
-find_package(Qt6 QUIET COMPONENTS Widgets)
+find_package(Qt6 QUIET COMPONENTS Widgets Network)
 
 if(NOT Qt6_FOUND)
-    find_package(Qt5 5.15 QUIET COMPONENTS Widgets)
+    find_package(Qt5 5.15 QUIET COMPONENTS Widgets Network)
 endif()
 
 if(NOT Qt6_FOUND AND NOT Qt5_FOUND)
     message(FATAL_ERROR
-        "Qt Widgets (Qt 5.15+ or Qt 6) was not found.\n"
+        "Qt Widgets and Qt Network (Qt 5.15+ or Qt 6) were not found.\n"
         "Point CMake at your Qt kit and re-run configure, for example:\n"
         "  configure.bat -DCMAKE_PREFIX_PATH=C:/Qt/6.11.2/<kit>\n"
         "  ./configure.sh -DCMAKE_PREFIX_PATH=/opt/Qt/6.11.2/<kit>")
 endif()
 
 if(Qt6_FOUND)
-    set(CLV_QT_TARGET Qt6::Widgets)
+    set(CLV_QT_TARGET Qt6::Widgets Qt6::Network)
     set(CLV_QT_MAJOR 6)
 else()
-    set(CLV_QT_TARGET Qt5::Widgets)
+    set(CLV_QT_TARGET Qt5::Widgets Qt5::Network)
     set(CLV_QT_MAJOR 5)
 endif()
+
+# ---------------------------------------------------------------------------
+# Mod support (Qt Core + Qt Network): manifest, download and installation
+# ---------------------------------------------------------------------------
+add_library(clv_mods STATIC
+    src/mods/ModManifestParser.cpp
+    src/mods/ModStateStore.cpp
+    src/mods/ModInstaller.cpp
+    src/mods/ModDownloader.cpp
+    src/mods/ModManager.cpp
+    src/mods/ModDownloader.h
+    src/mods/ModInstaller.h
+    src/mods/ModManager.h
+    src/mods/ModManifestParser.h
+    src/mods/ModStateStore.h
+    src/mods/PathBridge.h
+)
+
+target_include_directories(clv_mods
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(clv_mods
+    PUBLIC
+        clv_core
+        ${CLV_QT_TARGET}
+)
+
+if(MSVC)
+    target_compile_options(clv_mods PRIVATE /W3)
+else()
+    target_compile_options(clv_mods PRIVATE -Wall -Wextra)
+endif()
+
+set_target_properties(clv_mods PROPERTIES
+    AUTOMOC ON
+)
 
 set(CLV_UI_SOURCES
     src/ui/main.cpp
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
+    src/ui/ModsPanel.cpp
+    src/ui/ModsPanel.h
+    src/ui/Theme.h
 )
 
 if(WIN32)
@@ -87,6 +156,7 @@ target_include_directories(CossacksLogViewer
 target_link_libraries(CossacksLogViewer
     PRIVATE
         clv_core
+        clv_mods
         ${CLV_QT_TARGET}
 )
 

@@ -25,6 +25,7 @@
 #include <QRegularExpression>
 #include <QSettings>
 #include <QSplitter>
+#include <QStatusBar>
 #include <QTableWidget>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -39,22 +40,32 @@
 #include <windows.h>
 #endif
 
+#include "ModsPanel.h"
+#include "Theme.h"
 #include "core/GameDirectory.h"
 #include "core/LogModel.h"
 #include "core/LogParser.h"
 #include "core/TextUtils.h"
+#include "mods/ModManager.h"
 
 namespace {
 
 constexpr int kRefreshIntervalMs = 5000;
 constexpr int kMaxRecentDirs = 10;
 
-const char* kMutedColor = "#64748b";
-const char* kTextColor = "#1e293b";
-const char* kSurfaceColor = "#ffffff";
-const char* kBorderColor = "#d8e1eb";
-const char* kBackgroundColor = "#f4f7fb";
-const char* kAccentColor = "#c8372e";
+// Mod update checks: shortly after startup and every six hours, so a running
+// launcher notices a new release without polling the network hard.
+constexpr int kModCheckDelayMs = 1500;
+constexpr int kModCheckIntervalMs = 6 * 60 * 60 * 1000;
+
+constexpr int kNotificationTimeoutMs = 8000;
+
+using ui::kAccentColor;
+using ui::kBackgroundColor;
+using ui::kBorderColor;
+using ui::kMutedColor;
+using ui::kSurfaceColor;
+using ui::kTextColor;
 
 QString fromWide(const std::wstring& value)
 {
@@ -136,8 +147,16 @@ std::optional<QString> readRegistryString(
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    // Created first: the panel built below needs it.
+    modManager_ = new mods::ModManager(this);
+
     buildUi();
     buildMenus();
+
+    connect(modManager_, &mods::ModManager::Notification, this, [this](const QString& message)
+    {
+        statusBar()->showMessage(message, kNotificationTimeoutMs);
+    });
 
     refreshTimer_ = new QTimer(this);
     refreshTimer_->setInterval(kRefreshIntervalMs);
@@ -149,11 +168,30 @@ MainWindow::MainWindow(QWidget* parent)
         }
     });
 
+    modCheckTimer_ = new QTimer(this);
+    modCheckTimer_->setInterval(kModCheckIntervalMs);
+    connect(modCheckTimer_, &QTimer::timeout, this, [this]()
+    {
+        modManager_->CheckForUpdates(false);
+    });
+
     loadSettings();
 
     if (autoUpdateLogs_)
     {
         refreshTimer_->start();
+    }
+
+    if (autoModCheck_)
+    {
+        modCheckTimer_->start();
+
+        // Deferred: the window and the log list come up first, and an
+        // unreachable network never delays startup.
+        QTimer::singleShot(kModCheckDelayMs, this, [this]()
+        {
+            modManager_->CheckForUpdates(false);
+        });
     }
 }
 
@@ -187,25 +225,19 @@ void MainWindow::buildUi()
 
     browseButton_ = new QPushButton(tr("Browse"), central);
     browseButton_->setMinimumHeight(32);
-    browseButton_->setStyleSheet(
-        QStringLiteral(
-            "QPushButton { background:#f8fafc; color:%1; border:1px solid %2; "
-            "border-radius:8px; padding:0 16px; }"
-            "QPushButton:hover { background:#eef2f7; }").arg(kTextColor, kBorderColor)
-    );
+    browseButton_->setStyleSheet(ui::NeutralButtonStyle());
     topBar->addWidget(browseButton_);
 
     detectButton_ = new QPushButton(tr("Auto-detect"), central);
     detectButton_->setMinimumHeight(32);
-    detectButton_->setStyleSheet(
-        QStringLiteral(
-            "QPushButton { background:#2563eb; color:#ffffff; border:1px solid #2563eb; "
-            "border-radius:8px; padding:0 16px; }"
-            "QPushButton:hover { background:#1d4ed8; }")
-    );
+    detectButton_->setStyleSheet(ui::PrimaryButtonStyle());
     topBar->addWidget(detectButton_);
 
     mainLayout->addLayout(topBar);
+
+    // Mod status card: installs and updates the mod into the game folder.
+    modsPanel_ = new ModsPanel(modManager_, central);
+    mainLayout->addWidget(modsPanel_);
 
     // Section labels.
     auto* labels = new QHBoxLayout();
@@ -322,6 +354,14 @@ void MainWindow::buildMenus()
     fileMenu->addAction(tr("&Browse game folder..."), this, &MainWindow::browseGame);
     fileMenu->addAction(tr("&Detect game folder"), this, &MainWindow::detectGame);
     fileMenu->addSeparator();
+    fileMenu->addAction(tr("Check for &mod updates"), this, &MainWindow::checkModUpdates);
+
+    autoModCheckAction_ = fileMenu->addAction(tr("Check for mod updates on &startup"));
+    autoModCheckAction_->setCheckable(true);
+    autoModCheckAction_->setChecked(autoModCheck_);
+    connect(autoModCheckAction_, &QAction::toggled, this, &MainWindow::toggleAutoModCheck);
+
+    fileMenu->addSeparator();
     fileMenu->addAction(tr("Select &first compile error"), this, &MainWindow::selectFirstError);
     fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), this, &MainWindow::close);
@@ -335,6 +375,7 @@ void MainWindow::loadSettings()
     QSettings settings;
 
     autoUpdateLogs_ = settings.value(QStringLiteral("settings/autoUpdateLogs"), true).toBool();
+    autoModCheck_ = settings.value(QStringLiteral("mods/autoCheckOnStartup"), true).toBool();
     sortDescending_ = settings.value(QStringLiteral("logList/modifiedDescending"), true).toBool();
     fileColumnWidth_ = settings.value(QStringLiteral("logList/fileColumnWidth"), 250).toInt();
     modifiedColumnWidth_ = settings.value(QStringLiteral("logList/modifiedColumnWidth"), 168).toInt();
@@ -343,6 +384,11 @@ void MainWindow::loadSettings()
     if (autoUpdateAction_)
     {
         autoUpdateAction_->setChecked(autoUpdateLogs_);
+    }
+
+    if (autoModCheckAction_)
+    {
+        autoModCheckAction_->setChecked(autoModCheck_);
     }
 
     logTable_->setColumnWidth(0, fileColumnWidth_);
@@ -383,6 +429,7 @@ void MainWindow::saveSettings()
     QSettings settings;
 
     settings.setValue(QStringLiteral("settings/autoUpdateLogs"), autoUpdateLogs_);
+    settings.setValue(QStringLiteral("mods/autoCheckOnStartup"), autoModCheck_);
     settings.setValue(QStringLiteral("settings/gameDirectory"), gameDirCombo_->currentText().trimmed());
     settings.setValue(QStringLiteral("logList/modifiedDescending"), sortDescending_);
     settings.setValue(QStringLiteral("logList/fileColumnWidth"), logTable_->columnWidth(0));
@@ -393,6 +440,9 @@ void MainWindow::saveSettings()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    // Stops a running download and removes its partial file.
+    modManager_->Cancel();
+
     saveSettings();
     QMainWindow::closeEvent(event);
 }
@@ -515,6 +565,8 @@ void MainWindow::refreshLogs(bool showWarnings, bool preserveSelection)
         refreshing_ = false;
         return;
     }
+
+    syncModGameDirectory();
 
     logFiles_ = core::EnumerateLogFiles(toWide(baseDirectory));
     core::SortLogFiles(logFiles_, sortDescending_);
@@ -675,6 +727,7 @@ void MainWindow::clearLoadedLogs()
     preview_->clear();
 
     updateStatusLabels();
+    syncModGameDirectory();
 }
 
 void MainWindow::updateStatusLabels()
@@ -1074,4 +1127,39 @@ std::optional<QString> MainWindow::detectGameDirectory()
     }
 
     return std::nullopt;
+}
+
+void MainWindow::checkModUpdates()
+{
+    modManager_->CheckForUpdates(true);
+}
+
+void MainWindow::toggleAutoModCheck(bool enabled)
+{
+    autoModCheck_ = enabled;
+    saveSettings();
+
+    if (autoModCheck_)
+    {
+        modCheckTimer_->start();
+        modManager_->CheckForUpdates(false);
+    }
+    else
+    {
+        modCheckTimer_->stop();
+    }
+}
+
+void MainWindow::syncModGameDirectory()
+{
+    modManager_->SetGameDirectory(gameDirCombo_->currentText().trimmed());
+
+    // The first time a usable folder is known there is nothing to compare
+    // against yet, so look for the manifest right away instead of leaving the
+    // panel waiting for the next scheduled check.
+    if (modManager_->hasGameFolder() &&
+        modManager_->status() == mods::ModManager::Status::Idle)
+    {
+        modManager_->CheckForUpdates(false);
+    }
 }

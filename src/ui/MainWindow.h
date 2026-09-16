@@ -20,6 +20,12 @@ class QTextEdit;
 class QTimer;
 class QAction;
 
+class ModsPanel;
+
+namespace mods {
+class ModManager;
+}
+
 // Cross-platform Qt UI sharing the same core logic on every platform.
 class MainWindow : public QMainWindow
 {
@@ -36,6 +42,8 @@ private slots:
     void detectGame();
     void refreshLogs(bool showWarnings = true, bool preserveSelection = false);
     void toggleAutoUpdate(bool enabled);
+    void checkModUpdates();
+    void toggleAutoModCheck(bool enabled);
     void selectFirstError();
     void showAbout();
     void onGameDirEdited();
@@ -64,6 +72,9 @@ private:
     void refreshRecentDirs();
     void addRecentGameDir(const QString& path);
 
+    // Keeps the mod manager in sync with the folder chosen above.
+    void syncModGameDirectory();
+
     std::optional<QString> detectGameDirectory();
     std::optional<QString> detectSteamGameDirectory();
     std::optional<QString> detectGogGameDirectory();
@@ -84,9 +95,15 @@ private:
     QTimer* refreshTimer_ = nullptr;
     QAction* autoUpdateAction_ = nullptr;
 
+    mods::ModManager* modManager_ = nullptr;
+    ModsPanel* modsPanel_ = nullptr;
+    QTimer* modCheckTimer_ = nullptr;
+    QAction* autoModCheckAction_ = nullptr;
+
     // State
     std::vector<core::LogFileInfo> logFiles_;
     bool autoUpdateLogs_ = true;
+    bool autoModCheck_ = true;
     bool refreshing_ = false;
     bool updatingPreview_ = false;
     bool errorPaneVisible_ = false;
