@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "mods": {
     "ren": {
+      "workshopId": "3398700006",
       "name": "Renaissance",
       "versionLabel": "0.33",
       "versionNumber": 330,
