@@ -16,4 +16,13 @@ inline std::filesystem::path Utf8ToPath(const std::string& utf8)
         utf8.size()));
 }
 
+// std::filesystem::path -> UTF-8, the inverse of Utf8ToPath(). Always uses '/'
+// as the separator, whichever platform this runs on.
+inline std::string PathToUtf8(const std::filesystem::path& value)
+{
+    const std::u8string utf8 = value.generic_u8string();
+
+    return std::string(reinterpret_cast<const char*>(utf8.data()), utf8.size());
+}
+
 } // namespace core

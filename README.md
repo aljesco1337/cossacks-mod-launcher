@@ -136,6 +136,44 @@ and the installed version is recorded in
 `<game folder>/mods/Renaissance/.clv-mod-state.json` so it survives switching
 between several game installations.
 
+### Registering the mod in the game's mod list
+
+Cossacks 3 only loads folders that `<game folder>/mods/mods.ini` lists. Missing
+records are appended after a successful install, and the file is created when it
+does not exist:
+
+```text
+      [*] : struct.begin
+         dir = mods\Renaissance
+         dis = False
+      struct.end
+```
+
+- `dir` is relative to the **game folder**, not to the `mods` folder that holds
+  `mods.ini`. The game's own workshop records read
+  `..\..\workshop\content\333420\<id>`, which only resolves from
+  `<library>/steamapps/common/Cossacks 3` - two levels up is `steamapps` - so a
+  mod the launcher installs is listed as `mods\Renaissance`.
+- `dis` stands for *disabled* and holds the inverse of what it looks like:
+  `dis = False` switches a mod **on**, `dis = True` switches it **off**. The
+  installed mod is written as `dis = False`, so it is active right away. The
+  mapping lives in `core/ModsIni.h` (`ModsIniFlagFor`, `kModsIniEnabledFlag`).
+- **Steam workshop items are listed too.** If `..\..\workshop\content\333420`
+  exists relative to the game folder, every folder inside it is added to the list
+  with `dis = True`, so the newly installed mod keeps the highest entry and the
+  workshop items are listed but switched off. The step is skipped when that
+  folder does not exist (GOG install, or nothing downloaded).
+- An existing record is never rewritten. A mod the user enabled or disabled by
+  hand keeps that state and the records of other mods are left alone.
+- Unknown sections, comments, `[*]` arrays and the file's line endings are all
+  preserved: only new blocks are inserted. A missing `mods.ini` is created with
+  a complete `section.begin`/`section.end` skeleton.
+- A `mods.ini` stored as UTF-16 is reported and left untouched instead of being
+  rewritten in another encoding.
+
+If the list cannot be updated, the mod files are still installed and the reason
+is reported next to the button.
+
 ### When updates are checked
 
 1. Shortly after startup, and every six hours while the app is running.
@@ -206,6 +244,7 @@ broken download cannot damage a working installation.
   files open), the swap fails with a message instead of silently doing nothing.
 - `workshopId` is carried in the manifest but not acted upon yet; it exists to
   tie an entry back to its Steam Workshop item later on.
+- There is no uninstall, so a record is never removed from `mods/mods.ini` either.
 
 ### Testing against a local manifest
 
@@ -229,6 +268,8 @@ src/
 │   ├── LogParser.h/.cpp
 │   ├── GameDirectory.h/.cpp
 │   ├── ModManifest.h/.cpp   # manifest entry types and version comparison
+│   ├── ModsIni.h/.cpp       # parser for the game's mods/mods.ini list
+│   ├── Workshop.h/.cpp      # Steam workshop folders relative to the game
 │   └── ZipArchive.h/.cpp    # archive listing and safe extraction
 ├── mods/          # mod support (Qt Core + Qt Network)
 │   ├── ModManifestParser.h/.cpp

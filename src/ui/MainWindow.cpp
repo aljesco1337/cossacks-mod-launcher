@@ -47,6 +47,7 @@
 #include "core/LogParser.h"
 #include "core/TextUtils.h"
 #include "mods/ModManager.h"
+#include "core/Workshop.h"
 
 namespace {
 
@@ -1048,7 +1049,9 @@ std::optional<QString> MainWindow::detectSteamGameDirectory()
 
         for (const QString& library : libraries)
         {
-            const QString manifest = library + QStringLiteral("/steamapps/appmanifest_333420.acf");
+            const QString manifest = library +
+                QStringLiteral("/steamapps/appmanifest_%1.acf")
+                    .arg(QLatin1String(core::kCossacksSteamAppId));
             if (!QFile::exists(manifest))
             {
                 continue;

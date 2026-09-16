@@ -4,15 +4,20 @@
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
+#include <QStringList>
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include "PathBridge.h"
 #include "ModStateStore.h"
 #include "core/ModManifest.h"
+#include "core/ModsIni.h"
 #include "core/PathUtils.h"
+#include "core/Workshop.h"
 #include "core/ZipArchive.h"
 
 namespace mods {
@@ -36,6 +41,62 @@ fs::path StagingPath(const fs::path& modDirectory, const std::string& id)
 fs::path BackupPath(const fs::path& modDirectory, const std::string& id)
 {
     return WorkPath(modDirectory, id, ".clv-backup-");
+}
+
+std::string Utf8Of(const fs::path& value)
+{
+    return core::PathToUtf8(value);
+}
+
+// The game only loads folders that its mod list mentions, so a freshly
+// installed mod has to be registered in "<game folder>/mods/mods.ini". Existing
+// records are never touched, which keeps the state of the other mods intact.
+//
+// Steam workshop items found next to the game installation are listed as well,
+// but switched off: filling in the list must not change which mods the game
+// loads.
+bool RegisterInGameMods(
+    const fs::path& gameDirectory,
+    const fs::path& modDirectory,
+    std::string& error)
+{
+    const fs::path modsFolder = gameDirectory / L"mods";
+
+    // "dir" is relative to the GAME folder, not to the "mods" folder that holds
+    // mods.ini: the game's own workshop entries read
+    // "..\..\workshop\content\333420\<id>", which only resolves from
+    // "<library>/steamapps/common/Cossacks 3". Our own record therefore has to
+    // be "mods\Renaissance" and not "Renaissance".
+    //
+    // Textual on purpose: the folder was just created and may live outside the
+    // game folder (a manifest hint can point anywhere), in which case the record
+    // escapes it with ".." just like those workshop entries do.
+    fs::path relative = modDirectory.lexically_relative(gameDirectory);
+
+    if (relative.empty() || relative == fs::path(L"."))
+    {
+        relative = modDirectory.filename();
+    }
+
+    std::string ourDir = Utf8Of(relative);
+
+    // The format uses Windows separators.
+    std::replace(ourDir.begin(), ourDir.end(), '/', '\\');
+
+    std::vector<core::ModsIniRecord> records;
+
+    // Workshop items first, so our own record stays the last one appended - the
+    // same place it ends up in a list that already exists.
+    for (const std::string& workshopDir : core::EnumerateWorkshopModDirs(gameDirectory))
+    {
+        records.push_back(core::ModsIniRecord{ workshopDir, false });
+    }
+
+    records.push_back(core::ModsIniRecord{ ourDir, true });
+
+    bool added = false;
+
+    return core::EnsureModsIniRecords(modsFolder, records, added, error);
 }
 
 bool ComputeSha256(const QString& filePath, QString& digest, QString& error)
@@ -152,7 +213,8 @@ ModInstaller::Result ModInstaller::Install(
         }
     }
 
-    const fs::path modDirectory = core::ResolveInstallDir(ToPath(gameDirectory), release);
+    const fs::path gameDir = ToPath(gameDirectory);
+    const fs::path modDirectory = core::ResolveInstallDir(gameDir, release);
     const fs::path staging = StagingPath(modDirectory, release.id);
     const fs::path backup = BackupPath(modDirectory, release.id);
 
@@ -250,13 +312,27 @@ ModInstaller::Result ModInstaller::Install(
     state.installedAt = ModStateStore::NowIso8601().toUtf8().toStdString();
     state.downloadUrl = release.downloadUrl;
 
+    QStringList warnings;
     QString stateError;
 
     if (!ModStateStore::Write(FromPath(modDirectory), state, stateError))
     {
         // The files are in place, so this is only a bookkeeping problem: the
         // next check will not know which version is installed.
-        result.warning = Tr("the installed version could not be recorded (%1)").arg(stateError);
+        warnings << Tr("the installed version could not be recorded (%1)").arg(stateError);
+    }
+
+    std::string modListError;
+
+    if (!RegisterInGameMods(gameDir, modDirectory, modListError))
+    {
+        warnings << Tr("the game's mod list could not be updated (%1)")
+                        .arg(QString::fromStdString(modListError));
+    }
+
+    if (!warnings.isEmpty())
+    {
+        result.warning = warnings.join(QStringLiteral("; "));
     }
 
     result.success = true;
