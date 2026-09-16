@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "compatibleMods": [ "3464878862" ],
   "mods": {
     "ren": {
       "workshopId": "3398700006",
