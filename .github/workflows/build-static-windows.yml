@@ -1,0 +1,98 @@
+name: Build static Windows
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: 6.8.3
+  QT_STATIC_DIR: C:\Qt\6.8.3-static
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # Qt собирается долго, поэтому сохраняем готовую static-сборку
+      - name: Cache static Qt
+        id: qt-cache
+        uses: actions/cache@v5
+        with:
+          path: C:\Qt\6.8.3-static
+          key: qt-6.8.3-static-msvc2022-v1
+
+      - name: Download Qt sources
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.zip" `
+            -OutFile qtbase.zip
+
+          Expand-Archive qtbase.zip -DestinationPath qt-src
+
+      - name: Build static Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qt-build
+          Set-Location qt-build
+
+          & "$env:GITHUB_WORKSPACE\qt-src\qtbase-everywhere-src-6.8.3\configure.bat" `
+            -prefix "$env:QT_STATIC_DIR" `
+            -release `
+            -static `
+            -static-runtime `
+            -optimize-size `
+            -nomake examples `
+            -nomake tests `
+            -no-openssl
+
+          cmake --build . --parallel 2
+          cmake --install .
+
+      - name: Configure application
+        shell: pwsh
+        run: |
+          & "$env:QT_STATIC_DIR\bin\qt-cmake.bat" `
+            -S . `
+            -B build-static `
+            -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+
+      - name: Build application
+        run: cmake --build build-static --parallel 2
+
+      - name: Prepare artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist
+
+          $exe = Get-ChildItem build-static -Recurse -Filter CossacksLogViewer.exe |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "CossacksLogViewer.exe not found"
+          }
+
+          Copy-Item $exe.FullName dist\CossacksLogViewer.exe
+
+          dumpbin /DEPENDENTS dist\CossacksLogViewer.exe
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v7
+        with:
+          name: CossacksLogViewer-Windows-x64-static
+          path: dist/CossacksLogViewer.exe
+          if-no-files-found: error
