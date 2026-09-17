@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,6 +32,23 @@ struct ModRelease
     std::string archiveRoot;     // leading path component to drop on extract
 };
 
+// The launcher's own release, as published in the manifest's "app" member.
+//
+// The launcher never downloads an update by itself: a newer version is announced
+// and the release page is handed to the browser. That keeps the app out of the
+// business of replacing its own running binaries, which on Windows is locked and
+// in an AppImage is a read-only mount anyway.
+struct AppRelease
+{
+    std::string versionLabel;   // what the manifest publishes, e.g. "0.2.0"
+    std::string releasePageUrl; // release page to open in the browser
+
+    // Derived from versionLabel by the parser, never read from the manifest: the
+    // mod entries carry a hand-written number, but the app's own version has to
+    // agree with the label the user sees, so it is computed from it.
+    int versionNumber = 0;
+};
+
 struct ModManifest
 {
     int schemaVersion = 0;
@@ -44,6 +62,10 @@ struct ModManifest
     //
     // Entries match a folder name or a workshop id, see core/ModList.h.
     std::vector<std::string> compatibleMods;
+
+    // The launcher's own release. Optional: a manifest without the member, or
+    // with an unusable one, simply means "no app release is known".
+    std::optional<AppRelease> app;
 };
 
 // State of the mod as it is installed in the game directory. Persisted as
@@ -73,6 +95,20 @@ enum class ModUpdateStatus
 bool IsNewer(int candidateVersionNumber, int installedVersionNumber);
 
 ModUpdateStatus CompareVersions(const ModRelease& release, const InstalledModState& installed);
+
+// Turns a dotted version label into the comparable number the manifest publishes
+// for a mod: "0.2.0" -> 200, "1.4.2" -> 10402 (major * 10000 + minor * 100 +
+// patch), so minor and patch have to stay below 100.
+//
+// The launcher's own release is compared the same way: its version comes from
+// the release tag, the manifest publishes the same label, and both sides run
+// through this function. That is what makes the tag the only source of a version
+// and leaves the manifest without a number that could disagree with its label.
+//
+// A "v" prefix and anything after the third component are ignored ("v0.2.0-rc1"
+// -> 200, "1.2.3.4" -> 10203); a label without a single digit returns 0, which
+// never compares as an update.
+int VersionNumberFromLabel(const std::string& label);
 
 // Replaces characters that are invalid in a file name and falls back to the
 // mod id when nothing usable is left.

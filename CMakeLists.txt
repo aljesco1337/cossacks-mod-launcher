@@ -3,6 +3,13 @@ cmake_minimum_required(VERSION 3.21)
 # C is required for the vendored miniz ZIP reader.
 project(CossacksLogViewer VERSION 0.1 LANGUAGES C CXX)
 
+# The version the About box shows and the update check compares against. The
+# release workflow passes the git tag (-DCLV_APP_VERSION=0.2.0); a plain local
+# build falls back to the version declared above. Keeping it in one place is
+# what stops the About box and the update check from disagreeing.
+set(CLV_APP_VERSION "${PROJECT_VERSION}" CACHE STRING
+    "Version reported by the application and compared against the manifest.")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -155,6 +162,10 @@ endif()
 target_include_directories(CossacksLogViewer
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_compile_definitions(CossacksLogViewer PRIVATE
+    CLV_APP_VERSION="${CLV_APP_VERSION}"
 )
 
 target_link_libraries(CossacksLogViewer

@@ -65,6 +65,19 @@ public:
     bool isBusy() const { return stage_ != Stage::None || status_ == Status::Checking; }
     bool hasGameFolder() const;
 
+    // The version the app runs as, taken from
+    // QCoreApplication::applicationVersion() by the UI so the number has a
+    // single source. Nothing is announced before this is set: every release
+    // would look newer than version 0.
+    void SetApplicationVersionNumber(int number);
+
+    // The launcher's own release from the manifest, when it offers a usable one.
+    // Unrelated to release(), which describes the mod.
+    const core::AppRelease* appRelease() const { return appRelease_ ? &*appRelease_ : nullptr; }
+
+    // True when appRelease() is a newer version than the running one.
+    bool HasAppUpdate() const;
+
     // The mod the launcher manages, or nullptr before a manifest arrived.
     const core::ModRelease* release() const { return release_ ? &*release_ : nullptr; }
 
@@ -84,9 +97,19 @@ signals:
     // One translated line meant for the status bar.
     void Notification(const QString& message);
 
+    // A newer launcher version is known. Emitted once per version, so a check
+    // answered from the cached manifest does not announce it again and again.
+    void AppUpdateAvailable();
+
 private:
     void LoadCachedManifest();
     void ApplyManifest(const core::ModManifest& manifest);
+
+    // Takes over the manifest's "app" member and announces it when it is a
+    // version the user has not been told about yet.
+    void UpdateAppRelease(const core::ModManifest& manifest);
+    void AnnounceAppUpdateOnce();
+
     void RefreshInstalledState();
     void UpdateStatusFromVersions();
     void HandleCheckFailure(const QString& error);
@@ -110,6 +133,12 @@ private:
     std::optional<core::ModManifest> manifest_;
     std::optional<core::ModRelease> release_;
     std::optional<core::InstalledModState> installed_;
+
+    // The launcher's own update state, kept apart from the mod's: status_ drives
+    // the mod card, so an app release must never touch it.
+    std::optional<core::AppRelease> appRelease_;
+    int applicationVersionNumber_ = 0;
+    int announcedAppVersion_ = 0;
 
     Status status_ = Status::NoGameFolder;
     Stage stage_ = Stage::None;

@@ -311,12 +311,14 @@ the launcher:
 ### When updates are checked
 
 1. Shortly after startup, and every six hours while the app is running.
-2. On demand via **File → Check for mod updates**.
+2. On demand via **File → Check for mod updates** or **Help → Check for updates...**.
 3. Automatically the first time a usable game folder becomes known.
 
 The startup check can be disabled with **File → Check for mod updates on startup**.
 A background check never opens a dialog: new versions are announced in the
-status bar and by the button changing to an update.
+status bar and by the button changing to an update. The same check is what
+notices a new version of the launcher itself, see
+[Updating the launcher itself](#updating-the-launcher-itself).
 
 ### Where the version information comes from
 
@@ -329,6 +331,12 @@ https://raw.githubusercontent.com/aljesco1337/cossacks-mod-launcher/distribution
 ```jsonc
 {
   "schemaVersion": 1,
+
+  // optional: the launcher's own latest release (see below)
+  "app": {
+    "versionLabel": "0.2.0",   // compared against the version compiled in
+    "releasePageUrl": "https://github.com/aljesco1337/cossacks-mod-launcher/releases/latest"
+  },
 
   // optional: mods known to work together with this one (see below)
   "compatibleMods": [ "3123019560" ],
@@ -355,6 +363,12 @@ Without `installDir` the launcher installs into `mods/<name>`; without
 `archiveRoot` it strips the archive's single top level folder when there is one.
 New versions are compared by `versionNumber`, never by the label, because
 `"0.9"` sorts above `"0.33"` as text.
+
+The `app` member is the one exception: it carries no number, because the
+launcher derives it from `versionLabel` on both sides (see
+[Updating the launcher itself](#updating-the-launcher-itself)). A
+`versionNumber` written there is ignored, so a hand-edited manifest has one
+thing to get right instead of two that can disagree.
 
 `sha256` should be the bare lowercase digest. The OCI style with an algorithm
 prefix (`"sha256:9725..."`) is accepted as well and reduced to the digest, so a
@@ -399,6 +413,66 @@ Point the launcher at another manifest, for example one served from a folder:
 ```bash
 CLV_MANIFEST_URL=http://127.0.0.1:8000/manifest.json ./build/CossacksLogViewer
 ```
+
+---
+
+## Updating the launcher itself
+
+The launcher notices a newer version of itself and links to it. It does **not**
+download or replace anything: the update is announced in the status bar next to
+the About box and the release page is opened in the browser.
+
+That is deliberate. On Windows the running executable and the Qt DLLs beside it
+are locked and cannot be replaced from inside the process; on Linux the AppImage
+is a read-only squashfs mount that cannot be patched in place. Neither can be
+solved without a helper process, so the launcher leaves the download to the
+browser.
+
+### Where the version comes from
+
+The version is compiled in from the release tag and there is only one of it:
+
+- `.github/workflows/release.yml` passes `-DCLV_APP_VERSION=${GITHUB_REF_NAME#v}`
+  (the tag without its `v`) to CMake when a `v*` tag is built.
+- `CLV_APP_VERSION` becomes `QApplication::setApplicationVersion()`, so the
+  About box, the update check and the status bar all read the same value.
+- A local build without the option falls back to `project(... VERSION ...)` in
+  `CMakeLists.txt`.
+
+The comparison number is derived from the label (`major * 10000 + minor * 100 +
+patch`, so `0.2.0` is `200`) by `core::VersionNumberFromLabel()`, on both the
+running version and the one in the manifest. `0.10` is therefore newer than
+`0.9`, and `1.0` does not collide with `0.10`.
+
+### Publishing a new version
+
+1. Tag the release (`git tag v0.2.0 && git push origin v0.2.0`). The workflow
+   builds both packages and creates the GitHub Release; the tag is now the
+   version these binaries report.
+2. On the `distribution` branch, raise the `app` block:
+
+```jsonc
+"app": {
+  "versionLabel": "0.2.0",
+  "releasePageUrl": "https://github.com/aljesco1337/cossacks-mod-launcher/releases/latest"
+}
+```
+
+`/releases/latest` always points at the newest release, so the URL only has to be
+written once. Only `versionLabel` changes per release, and an app entry without
+it, without a URL, or with a label that holds no digit is ignored rather than
+treated as an update.
+
+### What the user sees
+
+- A clickable **"Version 0.2.0 is available"** link appears in the status bar
+  once a check finds a newer version, and stays there.
+- **Help → Check for updates...** checks on demand; the same request also
+  carries the mod update, so nothing extra is downloaded.
+- Each version is announced once per run, so the cached manifest does not make
+  the link appear over and over.
+- Before the app knows what version it runs as, nothing is announced: every
+  release would look newer than version 0.
 
 ---
 

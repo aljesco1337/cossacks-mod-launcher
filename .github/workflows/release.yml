@@ -27,9 +27,11 @@ jobs:
 
       - name: Configure CMake
         run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
-            -A x64
+            -A x64 `
+            -DCLV_APP_VERSION="$version"
 
       - name: Build Release
         run: |
@@ -97,7 +99,12 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          # The About box and the update check compare against this version, so
+          # the tag is handed to the build instead of a number kept in a file.
+          version="${GITHUB_REF_NAME#v}"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCLV_APP_VERSION="$version"
 
       - name: Build Release
         run: |

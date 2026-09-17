@@ -28,6 +28,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPalette>
 #include <QProcess>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -58,6 +59,7 @@
 #include "core/GameIni.h"
 #include "core/LogModel.h"
 #include "core/LogParser.h"
+#include "core/ModManifest.h"
 #include "core/TextUtils.h"
 #include "core/ZipArchive.h"
 #include "mods/ModManager.h"
@@ -206,6 +208,14 @@ MainWindow::MainWindow(QWidget* parent)
     {
         statusBar()->showMessage(message, kNotificationTimeoutMs);
     });
+
+    // Connected before the version is known: the cached manifest is read in the
+    // manager's constructor, so its first trustworthy verdict - and therefore
+    // the signal - arrives while SetApplicationVersionNumber() runs below.
+    connect(modManager_, &mods::ModManager::AppUpdateAvailable, this, &MainWindow::showAppUpdate);
+
+    modManager_->SetApplicationVersionNumber(
+        core::VersionNumberFromLabel(QCoreApplication::applicationVersion().toStdString()));
 
     refreshTimer_ = new QTimer(this);
     refreshTimer_->setInterval(kRefreshIntervalMs);
@@ -422,6 +432,16 @@ void MainWindow::buildUi()
     connect(exportButton_, &QPushButton::clicked, this, &MainWindow::exportLogs);
     connect(revealExportButton_, &QPushButton::clicked, this, &MainWindow::revealLastExport);
     connect(deleteLogsButton_, &QPushButton::clicked, this, &MainWindow::deleteLogs);
+
+    // A clickable link in the status bar, hidden until the manifest names a
+    // newer version. setOpenExternalLinks() makes Qt hand the URL to the
+    // browser, so no click handler is needed here.
+    appUpdateLabel_ = new QLabel(this);
+    appUpdateLabel_->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    appUpdateLabel_->setOpenExternalLinks(true);
+    appUpdateLabel_->setToolTip(tr("Opens the release page on GitHub."));
+    appUpdateLabel_->hide();
+    statusBar()->addPermanentWidget(appUpdateLabel_);
 }
 
 void MainWindow::buildMenus()
@@ -510,6 +530,7 @@ void MainWindow::buildMenus()
     addAction(darkThemeAction_);
 
     QMenu* helpMenu = menuBar()->addMenu(tr("&Help"));
+    helpMenu->addAction(tr("Check for &updates..."), this, &MainWindow::checkModUpdates);
     helpMenu->addAction(tr("&About..."), this, &MainWindow::showAbout);
 }
 
@@ -704,6 +725,18 @@ void MainWindow::applyTheme()
     logSettingsStatus_->setStyleSheet(mutedStyle);
 
     exportResultLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(colors.text));
+
+    if (appUpdateLabel_)
+    {
+        // A rich text label draws its anchors with the link colour of its
+        // palette, so that is the only place this colour can be themed. The
+        // primary colour, not the accent: accent means "something is wrong",
+        // and an update is not.
+        QPalette linkPalette = appUpdateLabel_->palette();
+        linkPalette.setColor(QPalette::Link, ui::ToColor(colors.primary));
+        linkPalette.setColor(QPalette::LinkVisited, ui::ToColor(colors.primary));
+        appUpdateLabel_->setPalette(linkPalette);
+    }
 
     revealExportButton_->setStyleSheet(ui::NeutralButtonStyle());
     exportButton_->setStyleSheet(ui::NeutralButtonStyle());
@@ -1228,11 +1261,37 @@ void MainWindow::showAbout()
     QMessageBox::about(
         this,
         tr("About CossacksLogViewer"),
-        tr("Cossacks Log Viewer, Version 0.1\n\n"
+        tr("Cossacks Log Viewer, Version %1\n\n"
            "A lightweight viewer for Cossacks 3 logs and script compile errors.\n\n"
            "Author: aljesco\n"
            "Contact: aljesco1337@gmail.com")
+            .arg(QCoreApplication::applicationVersion())
     );
+}
+
+void MainWindow::showAppUpdate()
+{
+    if (!appUpdateLabel_)
+    {
+        return;
+    }
+
+    const core::AppRelease* release = modManager_->appRelease();
+
+    if (!release)
+    {
+        appUpdateLabel_->hide();
+        return;
+    }
+
+    const QString url = QString::fromStdString(release->releasePageUrl);
+    const QString version = QString::fromStdString(release->versionLabel);
+
+    appUpdateLabel_->setText(
+        tr("<a href=\"%1\">Version %2 is available</a>")
+            .arg(url.toHtmlEscaped(), version.toHtmlEscaped()));
+
+    appUpdateLabel_->show();
 }
 
 void MainWindow::refreshRecentDirs()

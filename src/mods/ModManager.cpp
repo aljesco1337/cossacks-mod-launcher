@@ -163,7 +163,49 @@ void ModManager::ApplyManifest(const core::ModManifest& manifest)
         release_ = manifest_.value().mods.front();
     }
 
+    UpdateAppRelease(manifest);
+
     RefreshInstalledState();
+}
+
+void ModManager::UpdateAppRelease(const core::ModManifest& manifest)
+{
+    appRelease_ = manifest.app;
+    AnnounceAppUpdateOnce();
+}
+
+void ModManager::AnnounceAppUpdateOnce()
+{
+    if (!HasAppUpdate() || appRelease_->versionNumber == announcedAppVersion_)
+    {
+        return;
+    }
+
+    // Remembered so the same version is announced once, not on every check.
+    announcedAppVersion_ = appRelease_->versionNumber;
+    emit AppUpdateAvailable();
+}
+
+bool ModManager::HasAppUpdate() const
+{
+    // A version of 0 means the app never told us what it runs as, in which case
+    // every release would look newer.
+    return appRelease_ && applicationVersionNumber_ > 0 &&
+        core::IsNewer(appRelease_->versionNumber, applicationVersionNumber_);
+}
+
+void ModManager::SetApplicationVersionNumber(int number)
+{
+    if (number == applicationVersionNumber_)
+    {
+        return;
+    }
+
+    applicationVersionNumber_ = number;
+
+    // The cached manifest is read in the constructor, before the UI knows the
+    // version, so the verdict is taken again now that it can be trusted.
+    AnnounceAppUpdateOnce();
 }
 
 void ModManager::RefreshInstalledState()

@@ -1,5 +1,7 @@
 #include "ModManifest.h"
 
+#include <cctype>
+
 #include "PathUtils.h"
 
 namespace core {
@@ -35,6 +37,70 @@ bool IsInvalidFileNameByte(unsigned char byte)
 bool IsNewer(int candidateVersionNumber, int installedVersionNumber)
 {
     return candidateVersionNumber > installedVersionNumber;
+}
+
+int VersionNumberFromLabel(const std::string& label)
+{
+    // major * 10000 + minor * 100 + patch. Reading the label instead of taking
+    // a second number from the build is what keeps the release tag the single
+    // source of a version.
+    constexpr int kComponentCount = 3;
+    constexpr int kComponentLimit = 999;
+
+    int components[kComponentCount] = { 0, 0, 0 };
+    int index = 0;
+    bool sawDigit = false;
+
+    for (const char raw : label)
+    {
+        const unsigned char character = static_cast<unsigned char>(raw);
+
+        if (std::isdigit(character) != 0)
+        {
+            sawDigit = true;
+
+            // Clamped rather than overflowed: a nonsensical label must not wrap
+            // around into a version that compares as older (or newer).
+            if (components[index] < kComponentLimit)
+            {
+                components[index] = components[index] * 10 + (character - '0');
+            }
+
+            continue;
+        }
+
+        if (character == '.')
+        {
+            if (!sawDigit)
+            {
+                continue;
+            }
+
+            if (index + 1 >= kComponentCount)
+            {
+                // A fourth component ("1.2.3.4") ends the version. Its digits
+                // must not run into the patch number.
+                break;
+            }
+
+            ++index;
+            continue;
+        }
+
+        // Text before the first digit is skipped ("v0.2.0"), text after it ends
+        // the version ("0.2.0-rc1" and "0.2.0 (beta)" both stop at 200).
+        if (sawDigit)
+        {
+            break;
+        }
+    }
+
+    if (!sawDigit)
+    {
+        return 0;
+    }
+
+    return components[0] * 10000 + components[1] * 100 + components[2];
 }
 
 ModUpdateStatus CompareVersions(const ModRelease& release, const InstalledModState& installed)

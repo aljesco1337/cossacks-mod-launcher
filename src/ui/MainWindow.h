@@ -88,6 +88,11 @@ private:
     void applyPreviewHighlighting();
     bool selectFirstCompileErrorLine();
 
+    // Shows the "a newer version is available" link in the status bar. The
+    // update itself is a browser trip: the launcher never replaces its own
+    // files, which on Windows are locked and in an AppImage are read-only.
+    void showAppUpdate();
+
     void updateErrorPane();
     void showErrorPane();
     void hideErrorPane();
@@ -144,6 +149,7 @@ private:
     ModsPanel* modsPanel_ = nullptr;
     QTimer* modCheckTimer_ = nullptr;
     QAction* autoModCheckAction_ = nullptr;
+    QLabel* appUpdateLabel_ = nullptr;
 
     // State
     std::vector<core::LogFileInfo> logFiles_;

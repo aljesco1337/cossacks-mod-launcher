@@ -153,6 +153,28 @@ std::optional<core::ModManifest> ParseModManifest(const QByteArray& json, QStrin
         manifest.mods.push_back(std::move(release));
     }
 
+    // The launcher's own release. Optional, and only kept when it carries a
+    // readable version and somewhere to send the user: a manifest that announces
+    // a version without a page to open must not look like an update.
+    //
+    // The number is derived from the label rather than read from the JSON, so a
+    // hand-edited manifest has one thing to get right instead of two that can
+    // disagree.
+    const QJsonObject app = root.value(QStringLiteral("app")).toObject();
+
+    if (!app.isEmpty())
+    {
+        core::AppRelease release;
+        release.versionLabel = TextMember(app, "versionLabel");
+        release.releasePageUrl = TextMember(app, "releasePageUrl");
+        release.versionNumber = core::VersionNumberFromLabel(release.versionLabel);
+
+        if (release.versionNumber > 0 && !release.releasePageUrl.empty())
+        {
+            manifest.app = std::move(release);
+        }
+    }
+
     if (manifest.mods.empty())
     {
         error = QStringLiteral("the manifest does not list any mod");
