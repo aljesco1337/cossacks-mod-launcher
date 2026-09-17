@@ -6,7 +6,7 @@ rem  If no Qt location is supplied, this script looks for a Qt installation
 rem  under C:\Qt and forwards it to CMake via CMAKE_PREFIX_PATH.
 rem
 rem  Usage:
-rem    configure.bat                                  Generates into .\build
+rem    configure.bat                                  Generates into .\build-windows
 rem    configure.bat -DCMAKE_PREFIX_PATH=C:\Qt\6.11.2\msvc2022_64
 rem    configure.bat ...                              any extra CMake options
 rem ============================================================================

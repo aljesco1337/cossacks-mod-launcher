@@ -2,6 +2,7 @@ name: Build static Windows
 
 on:
   push:
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -16,27 +17,27 @@ jobs:
     runs-on: windows-2022
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      # Qt собирается долго, поэтому сохраняем готовую static-сборку
+      # Qt takes a long time to build from source, so cache the installed static kit.
       - name: Cache static Qt
         id: qt-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
-          path: C:\Qt\6.8.3-static
-          key: qt-6.8.3-static-msvc2022-v1
+          path: ${{ env.QT_STATIC_DIR }}
+          key: qt-${{ env.QT_VERSION }}-static-msvc2022-v1
 
       - name: Download Qt sources
         if: steps.qt-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           Invoke-WebRequest `
-            "https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.zip" `
+            "https://download.qt.io/archive/qt/6.8/${{ env.QT_VERSION }}/submodules/qtbase-everywhere-src-${{ env.QT_VERSION }}.zip" `
             -OutFile qtbase.zip
 
           Expand-Archive qtbase.zip -DestinationPath qt-src
@@ -45,18 +46,21 @@ jobs:
         if: steps.qt-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force qt-build
+          New-Item -ItemType Directory -Force qt-build | Out-Null
           Set-Location qt-build
 
-          & "$env:GITHUB_WORKSPACE\qt-src\qtbase-everywhere-src-6.8.3\configure.bat" `
+          & "$env:GITHUB_WORKSPACE\qt-src\qtbase-everywhere-src-$env:QT_VERSION\configure.bat" `
             -prefix "$env:QT_STATIC_DIR" `
             -release `
             -static `
             -static-runtime `
+            -opensource `
+            -confirm-license `
             -optimize-size `
             -nomake examples `
             -nomake tests `
-            -no-openssl
+            -no-openssl `
+            -cmake-generator Ninja
 
           cmake --build . --parallel 2
           cmake --install .
@@ -69,7 +73,7 @@ jobs:
             -B build-static `
             -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            -DCLV_BUILD_KIND=static
 
       - name: Build application
         run: cmake --build build-static --parallel 2
@@ -77,7 +81,7 @@ jobs:
       - name: Prepare artifact
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist
+          New-Item -ItemType Directory -Force dist | Out-Null
 
           $exe = Get-ChildItem build-static -Recurse -Filter CossacksLogViewer.exe |
             Select-Object -First 1
@@ -88,10 +92,15 @@ jobs:
 
           Copy-Item $exe.FullName dist\CossacksLogViewer.exe
 
-          dumpbin /DEPENDENTS dist\CossacksLogViewer.exe
+          $dependencies = dumpbin /DEPENDENTS dist\CossacksLogViewer.exe | Out-String
+          $dependencies
+
+          if ($dependencies -match 'Qt[56].*\.dll|VCRUNTIME|MSVCP') {
+            throw "Static artifact still depends on Qt or MSVC runtime DLLs."
+          }
 
       - name: Upload EXE
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: CossacksLogViewer-Windows-x64-static
           path: dist/CossacksLogViewer.exe

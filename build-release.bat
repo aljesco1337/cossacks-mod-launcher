@@ -3,7 +3,7 @@ rem ============================================================================
 rem  build-release.bat - Build Release binaries (configures first if needed).
 rem
 rem  Usage:
-rem    build-release.bat             Builds Release into .\build\Release
+rem    build-release.bat             Builds Release into .\build-windows
 rem    build-release.bat --parallel  ...or pass any extra CMake build options
 rem ============================================================================
 setlocal

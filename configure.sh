@@ -3,7 +3,7 @@
 #  configure.sh - Generate the CMake build tree.
 #
 #  Usage:
-#    ./configure.sh                        Generates into ./build (Release)
+#    ./configure.sh                        Generates into ./build-linux (Release)
 #    ./configure.sh -DCMAKE_BUILD_TYPE=Debug
 #    ./configure.sh ...                    any extra CMake options
 # ============================================================================
