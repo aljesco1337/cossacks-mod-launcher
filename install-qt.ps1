@@ -1,38 +1,41 @@
 $ErrorActionPreference = "Stop"
 
 $QtVersion = "6.11.2"
-$QtPackage = "qt.qt6.6112.win64_msvc2022_64"
+$QtArch = "win64_msvc2022_64"
 $QtRoot = "C:\Qt"
-$Installer = "$env:TEMP\qt-online-installer.exe"
-$InstallerUrl = "https://download.qt.io/official_releases/online_installers/qt-online-installer-windows-x64-online.exe"
+$QtPath = "$QtRoot\$QtVersion\msvc2022_64"
 
-Write-Host "Downloading Qt Online Installer..." -ForegroundColor Cyan
+# aqtinstall revision with Qt 6.11 support
+$AqtRevision = "9e49c82edc6d946db376dec907cca5b4b486eec5"
+$AqtUrl = "https://github.com/miurahr/aqtinstall/archive/$AqtRevision.zip"
 
-Invoke-WebRequest `
-    -Uri $InstallerUrl `
-    -OutFile $Installer
+Write-Host "Installing aqtinstall..." -ForegroundColor Cyan
 
-Write-Host "Installer downloaded to: $Installer" -ForegroundColor Green
+py -m pip install --upgrade $AqtUrl
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to install aqtinstall."
+}
 
 Write-Host "Installing Qt $QtVersion MSVC 2022 64-bit..." -ForegroundColor Cyan
 
-& $Installer `
-    --root $QtRoot `
-    --accept-licenses `
-    --accept-obligations `
-    --confirm-command `
-    install $QtPackage
+py -m aqt install-qt `
+    -O $QtRoot `
+    windows desktop `
+    $QtVersion `
+    $QtArch
+
+if ($LASTEXITCODE -ne 0) {
+    throw "Qt installation failed."
+}
 
 Write-Host ""
-Write-Host "Qt installation finished." -ForegroundColor Green
-
-$QtPath = "$QtRoot\$QtVersion\msvc2022_64"
 
 if (Test-Path "$QtPath\bin\qt-cmake.bat") {
+    Write-Host "Qt installation finished." -ForegroundColor Green
     Write-Host "Qt found at: $QtPath" -ForegroundColor Green
     Write-Host "qt-cmake: $QtPath\bin\qt-cmake.bat" -ForegroundColor Green
 }
 else {
-    Write-Warning "Qt installation directory was not found."
-    Write-Warning "You may need to authenticate with your Qt Account."
+    throw "Qt installation directory was not found: $QtPath"
 }
