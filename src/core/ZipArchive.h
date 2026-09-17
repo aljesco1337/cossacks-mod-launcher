@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -27,6 +28,20 @@ bool ExtractZip(
     const std::filesystem::path& destination,
     const std::filesystem::path& stripPrefix,
     const std::function<bool()>& isCancelled,
+    std::wstring& error);
+
+// Writes every regular file below "sourceFolder" into a new ZIP archive at
+// "archivePath", compressing them. Entry names are the path of each file
+// relative to "sourceFolder", prefixed with "entryPrefix" ("log" turns
+// "<game>/log/cos.log" into "log/cos.log" inside the archive).
+//
+// An existing file at "archivePath" is overwritten, and a failed export leaves
+// nothing behind. "fileCount" receives the number of files that were stored.
+bool CreateZipFromFolder(
+    const std::filesystem::path& sourceFolder,
+    const std::string& entryPrefix,
+    const std::filesystem::path& archivePath,
+    std::size_t& fileCount,
     std::wstring& error);
 
 } // namespace core

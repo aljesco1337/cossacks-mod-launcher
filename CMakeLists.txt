@@ -23,11 +23,11 @@ target_include_directories(clv_miniz
         ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/miniz
 )
 
-# Only decompression and in-memory reading are used, which keeps the compiled
-# size down. miniz stays a C file and is built without the project's warning
-# flags to avoid warnings from third party code.
+# miniz stays a C file and is built without the project's warning flags to avoid
+# warnings from third party code. The stdio APIs stay disabled: archives are
+# written to a heap buffer that the caller saves, which also keeps non-ASCII
+# paths working on Windows (miniz's file APIs take 8-bit names).
 target_compile_definitions(clv_miniz PRIVATE
-    MINIZ_NO_DEFLATE_APIS
     MINIZ_NO_STDIO
 )
 
@@ -39,6 +39,7 @@ add_library(clv_core STATIC
     src/core/LogModel.cpp
     src/core/LogParser.cpp
     src/core/GameDirectory.cpp
+    src/core/GameIni.cpp
     src/core/ModList.cpp
     src/core/ModManifest.cpp
     src/core/ModsIni.cpp

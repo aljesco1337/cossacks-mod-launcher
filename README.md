@@ -118,6 +118,87 @@ so it runs without Qt's `bin` directory on `PATH`.
 
 ---
 
+## Views
+
+The window has two views, switched from the **View** menu (`Ctrl+1` / `Ctrl+2`).
+The choice is remembered between runs.
+
+| View | Shows |
+| --- | --- |
+| **Simple** (default) | The game folder selector and the mod card - everything a player needs to install or update the mod. The window is kept small, because it holds nothing else. |
+| **Advanced** | The same two, plus the log viewer: the log tools, the log file list, the highlighted preview and the compile-error pane. |
+
+The folder selector and the mod card are shared, so an install or an update can be
+started from either view, and the log list is not reread from disk while the simple
+view is on screen. Switching to the advanced view refreshes it right away.
+
+Each view remembers the window size it had, so switching back and forth does not
+resize a window the user already sized.
+
+The log entries in the **File** menu work from both views; *Select first compile
+error* switches to the advanced view so its result is actually visible.
+
+---
+
+## Log files
+
+Cossacks 3 writes its log files into `<game folder>/log`, and only does so while
+the engine's logging is switched on.
+
+### Enabling the log files
+
+The advanced view has an **Enable log files** checkbox. It shows what the game is
+currently configured to do and writes the two switches that control it into
+`<game folder>/cossacks.ini`:
+
+```ini
+section.begin
+   GameSaveDirectoryPath=cossacks
+   LogFileEnabled = true
+   LogFileRoot = true
+   LogFileName = cos
+   HideHelloScreen = true
+section.end
+```
+
+- Switching it on writes `LogFileEnabled = true` and `LogFileRoot = true`, and
+  switching it off writes `false` for both - the engine only logs when both are on.
+- The change applies the next time the game starts.
+- The file is edited in place: comments, indentation, the value spelling
+  (`true`/`True`), the line ending style and a UTF-8 BOM all survive. Keys the file
+  does not have yet are added next to their siblings. A UTF-16 file is refused
+  rather than rewritten.
+- The label next to the checkbox reports the current state, and the checkbox is
+  disabled when the file cannot be read.
+
+### Exporting logs
+
+**Export logs...** compresses everything in the log folder into one ZIP file, which
+is the easiest way to hand a problem report to someone else. The whole `log`
+folder is packed (including subfolders), the suggested file name carries a
+timestamp, and `log/...` paths are kept inside the archive.
+
+Afterwards the window shows where the archive went - file name, size and the full
+path in the tooltip - together with a **Show in folder** button, and the file is
+revealed in the system's file manager right away.
+
+### Deleting logs
+
+**Delete logs...** removes the log files in `<game folder>/log` - the files the log
+list shows; subfolders inside it are left alone.
+
+A confirmation dialog comes first. It names the folder and tells how many files and
+how much data will go, lists the file names behind *Show Details*, and says that
+deleting cannot be undone. Only an explicit **Delete** removes anything; **Cancel**
+is the default button and leaves the folder as it is.
+
+The log list is refreshed right away afterwards. A file that cannot be removed -
+normally because the game is still running and holds its log open - is reported, and
+the files that could be deleted stay deleted instead of the whole operation being
+rolled back.
+
+---
+
 ## Managing the mod
 
 The window shows a card for **Renaissance** with a single action button, which

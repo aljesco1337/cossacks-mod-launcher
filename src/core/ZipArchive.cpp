@@ -1,5 +1,6 @@
 #include "ZipArchive.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <fstream>
 #include <string>
@@ -14,6 +15,10 @@ namespace core {
 namespace {
 
 using Path = std::filesystem::path;
+
+// Starting size of the heap buffer a new archive is built in; miniz grows it
+// as needed.
+constexpr std::size_t kZipInitialSize = 1u << 20;
 
 // Rejects anything that could escape the extraction directory once combined
 // with it. Callers pass paths that already went through lexically_normal(),
@@ -419,6 +424,151 @@ bool ExtractZip(
             return false;
         }
     }
+
+    return true;
+}
+
+bool CreateZipFromFolder(
+    const std::filesystem::path& sourceFolder,
+    const std::string& entryPrefix,
+    const std::filesystem::path& archivePath,
+    std::size_t& fileCount,
+    std::wstring& error)
+{
+    fileCount = 0;
+
+    std::error_code ec;
+
+    if (!std::filesystem::is_directory(sourceFolder, ec))
+    {
+        error = L"The folder that should be archived does not exist.";
+        return false;
+    }
+
+    // Resolved once so the archive is never packed into itself when the user
+    // saves it next to the files it contains.
+    std::error_code absoluteError;
+    const Path absoluteArchive = std::filesystem::absolute(archivePath, absoluteError);
+
+    std::vector<Path> files;
+
+    for (std::filesystem::recursive_directory_iterator it(sourceFolder, ec), end;
+         !ec && it != end;
+         it.increment(ec))
+    {
+        if (!it->is_regular_file(ec))
+        {
+            continue;
+        }
+
+        const Path file = it->path();
+
+        if (!absoluteError && std::filesystem::absolute(file, absoluteError) == absoluteArchive)
+        {
+            continue;
+        }
+
+        files.push_back(file);
+    }
+
+    if (files.empty())
+    {
+        error = L"There is nothing to archive.";
+        return false;
+    }
+
+    // Stable order, so two exports of the same folder look the same.
+    std::sort(files.begin(), files.end());
+
+    mz_zip_archive archive{};
+
+    if (mz_zip_writer_init_heap(&archive, 0, kZipInitialSize) == MZ_FALSE)
+    {
+        error = L"Cannot start the archive.";
+        return false;
+    }
+
+    std::size_t added = 0;
+    std::vector<std::uint8_t> data;
+
+    for (const Path& file : files)
+    {
+        data.clear();
+
+        // The message is discarded: an unreadable file is skipped rather than
+        // failing the whole export.
+        std::wstring readError;
+
+        if (!ReadWholeFile(file, data, readError))
+        {
+            continue;
+        }
+
+        std::string entryName = PathToUtf8(file.lexically_relative(sourceFolder));
+
+        if (!entryPrefix.empty())
+        {
+            entryName = entryPrefix + "/" + entryName;
+        }
+
+        // A null buffer would trip miniz's assertions for empty files.
+        const char* contents = data.empty()
+            ? ""
+            : reinterpret_cast<const char*>(data.data());
+
+        if (mz_zip_writer_add_mem(&archive, entryName.c_str(), contents, data.size(), MZ_DEFAULT_COMPRESSION) == MZ_FALSE)
+        {
+            continue;
+        }
+
+        added++;
+    }
+
+    if (added == 0)
+    {
+        mz_zip_writer_end(&archive);
+        error = L"None of the files could be added to the archive.";
+        return false;
+    }
+
+    void* buffer = nullptr;
+    std::size_t bufferSize = 0;
+
+    if (mz_zip_writer_finalize_heap_archive(&archive, &buffer, &bufferSize) == MZ_FALSE)
+    {
+        mz_zip_writer_end(&archive);
+        error = L"The archive could not be finalized.";
+        return false;
+    }
+
+    // The buffer is handed over by finalize_heap_archive(), so ending the
+    // archive no longer owns it.
+    mz_zip_writer_end(&archive);
+
+    bool written = false;
+
+    {
+        std::ofstream output(archivePath, std::ios::binary | std::ios::trunc);
+
+        if (output && bufferSize > 0)
+        {
+            output.write(static_cast<const char*>(buffer), static_cast<std::streamsize>(bufferSize));
+            written = output.good();
+        }
+    }
+
+    mz_free(buffer);
+
+    if (!written)
+    {
+        std::error_code removeError;
+        std::filesystem::remove(archivePath, removeError);
+
+        error = L"Cannot write the archive (the disk may be full).";
+        return false;
+    }
+
+    fileCount = added;
 
     return true;
 }

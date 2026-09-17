@@ -7,24 +7,34 @@
 #include "MainWindow.h"
 
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QProcess>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QSettings>
+#include <QSizePolicy>
 #include <QSplitter>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTextBlock>
@@ -32,9 +42,11 @@
 #include <QTextDocument>
 #include <QTextEdit>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <string>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -43,9 +55,11 @@
 #include "ModsPanel.h"
 #include "Theme.h"
 #include "core/GameDirectory.h"
+#include "core/GameIni.h"
 #include "core/LogModel.h"
 #include "core/LogParser.h"
 #include "core/TextUtils.h"
+#include "core/ZipArchive.h"
 #include "mods/ModManager.h"
 #include "core/Workshop.h"
 
@@ -76,6 +90,47 @@ QString fromWide(const std::wstring& value)
 std::wstring toWide(const QString& value)
 {
     return value.toStdWString();
+}
+
+// "cossacks.ini" is edited as raw bytes, so the file keeps its exact encoding
+// and line endings.
+bool ReadFileBytes(const QString& filePath, std::string& text, QString& error)
+{
+    QFile file(filePath);
+
+    if (!file.open(QIODevice::ReadOnly))
+    {
+        error = file.errorString();
+        return false;
+    }
+
+    const QByteArray data = file.readAll();
+    text.assign(data.constData(), static_cast<std::size_t>(data.size()));
+
+    return true;
+}
+
+bool WriteFileBytes(const QString& filePath, const std::string& text, QString& error)
+{
+    QFile file(filePath);
+
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    {
+        error = file.errorString();
+        return false;
+    }
+
+    const qint64 written = file.write(text.data(), static_cast<qint64>(text.size()));
+
+    if (written != static_cast<qint64>(text.size()) || !file.flush())
+    {
+        error = file.errorString();
+        return false;
+    }
+
+    file.close();
+
+    return true;
 }
 
 #ifdef _WIN32
@@ -163,7 +218,9 @@ MainWindow::MainWindow(QWidget* parent)
     refreshTimer_->setInterval(kRefreshIntervalMs);
     connect(refreshTimer_, &QTimer::timeout, this, [this]()
     {
-        if (autoUpdateLogs_ && !isMinimized())
+        // The log list is off screen in the simple view, so rereading the files
+        // every few seconds would only cost disk access.
+        if (autoUpdateLogs_ && viewMode_ == ViewMode::Advanced && !isMinimized())
         {
             refreshLogs(false, true);
         }
@@ -199,7 +256,7 @@ MainWindow::MainWindow(QWidget* parent)
 void MainWindow::buildUi()
 {
     setWindowTitle(QStringLiteral("CossacksLogViewer"));
-    resize(1600, 800);
+    resize(advancedViewSize_);
 
     auto* central = new QWidget(this);
     central->setStyleSheet(
@@ -237,8 +294,55 @@ void MainWindow::buildUi()
     mainLayout->addLayout(topBar);
 
     // Mod status card: installs and updates the mod into the game folder.
+    // Shared by both views, so it is never hidden.
     modsPanel_ = new ModsPanel(modManager_, central);
+    modsPanel_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     mainLayout->addWidget(modsPanel_);
+
+    // Log area: only shown in the advanced view.
+    logSection_ = new QWidget(central);
+    auto* logLayout = new QVBoxLayout(logSection_);
+    logLayout->setContentsMargins(0, 0, 0, 0);
+    logLayout->setSpacing(12);
+
+    // Log tools: switching the engine's logging on and off, and handing the
+    // whole log folder to someone else as a single archive.
+    auto* logTools = new QHBoxLayout();
+    logTools->setSpacing(8);
+
+    logSettingsCheck_ = new QCheckBox(tr("Enable log files"), logSection_);
+
+    logSettingsStatus_ = new QLabel(logSection_);
+    logSettingsStatus_->setStyleSheet(QStringLiteral("color:%1;").arg(kMutedColor));
+
+    exportResultLabel_ = new QLabel(logSection_);
+    exportResultLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(kTextColor));
+
+    revealExportButton_ = new QPushButton(tr("Show in folder"), logSection_);
+    revealExportButton_->setMinimumHeight(32);
+    revealExportButton_->setStyleSheet(ui::NeutralButtonStyle());
+    revealExportButton_->hide();
+
+    exportButton_ = new QPushButton(tr("Export logs..."), logSection_);
+    exportButton_->setMinimumHeight(32);
+    exportButton_->setStyleSheet(ui::NeutralButtonStyle());
+    exportButton_->setToolTip(tr("Compresses everything in the game's log folder into one ZIP file."));
+
+    deleteLogsButton_ = new QPushButton(tr("Delete logs..."), logSection_);
+    deleteLogsButton_->setMinimumHeight(32);
+    deleteLogsButton_->setStyleSheet(ui::DangerButtonStyle());
+    deleteLogsButton_->setToolTip(tr("Removes the log files after a confirmation."));
+
+    logTools->addWidget(logSettingsCheck_);
+    logTools->addWidget(logSettingsStatus_);
+    logTools->addStretch(1);
+    logTools->addWidget(exportResultLabel_);
+    logTools->addWidget(revealExportButton_);
+    logTools->addSpacing(12);
+    logTools->addWidget(deleteLogsButton_);
+    logTools->addWidget(exportButton_);
+
+    logLayout->addLayout(logTools);
 
     // Section labels.
     auto* labels = new QHBoxLayout();
@@ -271,7 +375,7 @@ void MainWindow::buildUi()
     labels->addWidget(errorCountLabel_);
     labels->addWidget(criticalCountLabel_);
 
-    mainLayout->addLayout(labels);
+    logLayout->addLayout(labels);
 
     // Splitter: log list on the left, preview + error pane on the right.
     splitter_ = new QSplitter(Qt::Horizontal, central);
@@ -325,7 +429,14 @@ void MainWindow::buildUi()
     splitter_->setStretchFactor(1, 1);
     splitter_->setSizes({ 420, 1180 });
 
-    mainLayout->addWidget(splitter_, 1);
+    logLayout->addWidget(splitter_, 1);
+    mainLayout->addWidget(logSection_, 1);
+
+    // Absorbs the free space under the mod card while the log area is hidden,
+    // so the simple view stays top-aligned instead of drifting to the middle.
+    simpleViewSpacer_ = new QWidget(central);
+    simpleViewSpacer_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+    mainLayout->addWidget(simpleViewSpacer_);
 
     // Connections.
     connect(browseButton_, &QPushButton::clicked, this, &MainWindow::browseGame);
@@ -338,6 +449,10 @@ void MainWindow::buildUi()
     connect(logTable_, &QTableWidget::itemSelectionChanged, this, &MainWindow::onLogSelected);
     connect(logTable_->horizontalHeader(), &QHeaderView::sectionClicked, this, &MainWindow::onHeaderClicked);
     connect(preview_, &QTextEdit::cursorPositionChanged, this, &MainWindow::onCaretMoved);
+    connect(logSettingsCheck_, &QCheckBox::toggled, this, &MainWindow::onLogSettingToggled);
+    connect(exportButton_, &QPushButton::clicked, this, &MainWindow::exportLogs);
+    connect(revealExportButton_, &QPushButton::clicked, this, &MainWindow::revealLastExport);
+    connect(deleteLogsButton_, &QPushButton::clicked, this, &MainWindow::deleteLogs);
 }
 
 void MainWindow::buildMenus()
@@ -367,6 +482,35 @@ void MainWindow::buildMenus()
     fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), this, &MainWindow::close);
 
+    QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
+
+    auto* viewGroup = new QActionGroup(this);
+    viewGroup->setExclusive(true);
+
+    simpleViewAction_ = viewMenu->addAction(tr("&Simple view"));
+    simpleViewAction_->setCheckable(true);
+    simpleViewAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+1")));
+    simpleViewAction_->setToolTip(tr("Game folder and mod updater."));
+    viewGroup->addAction(simpleViewAction_);
+
+    advancedViewAction_ = viewMenu->addAction(tr("&Advanced view"));
+    advancedViewAction_->setCheckable(true);
+    advancedViewAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+2")));
+    advancedViewAction_->setToolTip(tr("Adds the log viewer to the simple view."));
+    viewGroup->addAction(advancedViewAction_);
+
+    connect(simpleViewAction_, &QAction::triggered, this, [this]()
+    {
+        setViewMode(ViewMode::Simple);
+    });
+    connect(advancedViewAction_, &QAction::triggered, this, [this]()
+    {
+        setViewMode(ViewMode::Advanced);
+    });
+
+    addAction(simpleViewAction_);
+    addAction(advancedViewAction_);
+
     QMenu* helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(tr("&About..."), this, &MainWindow::showAbout);
 }
@@ -377,6 +521,11 @@ void MainWindow::loadSettings()
 
     autoUpdateLogs_ = settings.value(QStringLiteral("settings/autoUpdateLogs"), true).toBool();
     autoModCheck_ = settings.value(QStringLiteral("mods/autoCheckOnStartup"), true).toBool();
+    viewMode_ = settings.value(QStringLiteral("settings/viewMode"), QStringLiteral("simple"))
+                        .toString()
+                        .compare(QStringLiteral("advanced"), Qt::CaseInsensitive) == 0
+        ? ViewMode::Advanced
+        : ViewMode::Simple;
     sortDescending_ = settings.value(QStringLiteral("logList/modifiedDescending"), true).toBool();
     fileColumnWidth_ = settings.value(QStringLiteral("logList/fileColumnWidth"), 250).toInt();
     modifiedColumnWidth_ = settings.value(QStringLiteral("logList/modifiedColumnWidth"), 168).toInt();
@@ -423,6 +572,7 @@ void MainWindow::loadSettings()
 
     refreshRecentDirs();
     updateModifiedColumnTitle();
+    applyViewMode();
 }
 
 void MainWindow::saveSettings()
@@ -431,12 +581,62 @@ void MainWindow::saveSettings()
 
     settings.setValue(QStringLiteral("settings/autoUpdateLogs"), autoUpdateLogs_);
     settings.setValue(QStringLiteral("mods/autoCheckOnStartup"), autoModCheck_);
+    settings.setValue(
+        QStringLiteral("settings/viewMode"),
+        viewMode_ == ViewMode::Advanced ? QStringLiteral("advanced") : QStringLiteral("simple"));
     settings.setValue(QStringLiteral("settings/gameDirectory"), gameDirCombo_->currentText().trimmed());
     settings.setValue(QStringLiteral("logList/modifiedDescending"), sortDescending_);
     settings.setValue(QStringLiteral("logList/fileColumnWidth"), logTable_->columnWidth(0));
     settings.setValue(QStringLiteral("logList/modifiedColumnWidth"), logTable_->columnWidth(1));
     settings.setValue(QStringLiteral("layout/splitterState"), splitter_->saveState());
     settings.setValue(QStringLiteral("recentDirs"), recentDirs_);
+}
+
+void MainWindow::setViewMode(ViewMode mode)
+{
+    if (viewMode_ == mode)
+    {
+        return;
+    }
+
+    // Remember how the user sized the view being left, so switching back and
+    // forth does not resize their window twice.
+    (viewMode_ == ViewMode::Advanced ? advancedViewSize_ : simpleViewSize_) = size();
+
+    viewMode_ = mode;
+    applyViewMode();
+    saveSettings();
+
+    if (mode == ViewMode::Advanced)
+    {
+        // The list went stale while it was hidden: the refresh timer stands
+        // still in the simple view, so catch up now.
+        refreshLogs(false, true);
+    }
+}
+
+void MainWindow::applyViewMode()
+{
+    const bool advanced = viewMode_ == ViewMode::Advanced;
+
+    // The folder selector and the mod card are shared by both views; only the
+    // log area is exclusive to the advanced one.
+    logSection_->setVisible(advanced);
+    simpleViewSpacer_->setVisible(!advanced);
+
+    if (simpleViewAction_)
+    {
+        simpleViewAction_->setChecked(!advanced);
+    }
+
+    if (advancedViewAction_)
+    {
+        advancedViewAction_->setChecked(advanced);
+    }
+
+    // The simple view holds two rows, so it does not need the room the log
+    // viewer takes.
+    resize(advanced ? advancedViewSize_ : simpleViewSize_);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -568,6 +768,7 @@ void MainWindow::refreshLogs(bool showWarnings, bool preserveSelection)
     }
 
     syncModGameDirectory();
+    refreshLogSettings();
 
     logFiles_ = core::EnumerateLogFiles(toWide(baseDirectory));
     core::SortLogFiles(logFiles_, sortDescending_);
@@ -729,6 +930,7 @@ void MainWindow::clearLoadedLogs()
 
     updateStatusLabels();
     syncModGameDirectory();
+    refreshLogSettings();
 }
 
 void MainWindow::updateStatusLabels()
@@ -922,6 +1124,10 @@ void MainWindow::hideErrorPane()
 
 void MainWindow::selectFirstError()
 {
+    // The log preview is hidden in the simple view; move to the view that can
+    // show the result instead of searching an invisible document.
+    setViewMode(ViewMode::Advanced);
+
     if (selectFirstCompileErrorLine())
     {
         updateErrorPane();
@@ -1165,4 +1371,356 @@ void MainWindow::syncModGameDirectory()
     {
         modManager_->CheckForUpdates(false);
     }
+}
+
+QString MainWindow::cossacksIniPath() const
+{
+    const QString gameDirectory = gameDirCombo_->currentText().trimmed();
+
+    if (gameDirectory.isEmpty())
+    {
+        return QString();
+    }
+
+    return QDir(gameDirectory).filePath(QString::fromLatin1(core::kCossacksIniFileName));
+}
+
+void MainWindow::refreshLogSettings()
+{
+    if (!logSettingsCheck_)
+    {
+        return;
+    }
+
+    const QString filePath = cossacksIniPath();
+
+    std::string text;
+    QString error;
+
+    const bool readable = !filePath.isEmpty() && ReadFileBytes(filePath, text, error);
+
+    // Setting the checkbox from code must not write the file back.
+    updatingLogSettings_ = true;
+
+    if (!readable)
+    {
+        logSettingsCheck_->setChecked(false);
+        logSettingsCheck_->setEnabled(false);
+        logSettingsCheck_->setToolTip(
+            filePath.isEmpty()
+                ? tr("Select a game folder first.")
+                : tr("Cannot read %1.").arg(filePath));
+
+        logSettingsStatus_->setText(tr("cossacks.ini not found"));
+        updatingLogSettings_ = false;
+        return;
+    }
+
+    const core::LogIniSettings settings = core::ReadLogSettings(text);
+    const bool loggingOn = settings.enabled && settings.root;
+
+    logSettingsCheck_->setEnabled(true);
+    logSettingsCheck_->setChecked(loggingOn);
+    logSettingsCheck_->setToolTip(
+        tr("Switches LogFileEnabled and LogFileRoot in\n%1\nThe new setting applies the next time the game starts.")
+            .arg(filePath));
+
+    if (!settings.present)
+    {
+        logSettingsStatus_->setText(tr("Not configured in cossacks.ini yet"));
+    }
+    else if (settings.enabled != settings.root)
+    {
+        // The engine needs both switches, so the checkbox cannot show either.
+        logSettingsStatus_->setText(tr("cossacks.ini has only one of the two switches"));
+    }
+    else
+    {
+        logSettingsStatus_->setText(loggingOn ? tr("Logging is on") : tr("Logging is off"));
+    }
+
+    updatingLogSettings_ = false;
+}
+
+void MainWindow::onLogSettingToggled(bool enabled)
+{
+    if (updatingLogSettings_)
+    {
+        return;
+    }
+
+    const QString filePath = cossacksIniPath();
+
+    if (filePath.isEmpty())
+    {
+        reportLogSettingFailure(tr("Select a game folder first."));
+        return;
+    }
+
+    std::string text;
+    QString error;
+
+    if (!ReadFileBytes(filePath, text, error))
+    {
+        reportLogSettingFailure(
+            tr("Cannot read %1:\n%2").arg(filePath, error));
+        return;
+    }
+
+    std::string updated;
+    std::string failure;
+
+    if (!core::SetLogSettings(text, enabled, updated, failure))
+    {
+        reportLogSettingFailure(QString::fromStdString(failure));
+        return;
+    }
+
+    if (!WriteFileBytes(filePath, updated, error))
+    {
+        reportLogSettingFailure(tr("Cannot write %1:\n%2").arg(filePath, error));
+        return;
+    }
+
+    statusBar()->showMessage(
+        enabled
+            ? tr("Logging enabled in %1").arg(QFileInfo(filePath).fileName())
+            : tr("Logging disabled in %1").arg(QFileInfo(filePath).fileName()),
+        kNotificationTimeoutMs);
+
+    // Re-read, so the checkbox and its label show what the file really holds.
+    refreshLogSettings();
+}
+
+void MainWindow::reportLogSettingFailure(const QString& message)
+{
+    QMessageBox::warning(this, tr("cossacks.ini"), message);
+
+    // Put the checkbox back where the file says it is.
+    refreshLogSettings();
+}
+
+void MainWindow::exportLogs()
+{
+    const QString gameDirectory = gameDirCombo_->currentText().trimmed();
+
+    if (gameDirectory.isEmpty() || !core::IsValidGameDirectory(toWide(gameDirectory)))
+    {
+        QMessageBox::warning(
+            this,
+            tr("No game folder"),
+            tr("Select a valid Cossacks 3 folder first."));
+        return;
+    }
+
+    const QString logDirectory = QDir(gameDirectory).filePath(QStringLiteral("log"));
+
+    if (!QDir(logDirectory).exists())
+    {
+        QMessageBox::warning(
+            this,
+            tr("Nothing to export"),
+            tr("The game folder has no \"log\" directory yet.\n\n"
+               "Start the game once with log files enabled."));
+        return;
+    }
+
+    const QDir documents(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation));
+    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    const QString suggested = documents.filePath(QStringLiteral("cossacks-logs-%1.zip").arg(timestamp));
+
+    const QString target = QFileDialog::getSaveFileName(
+        this,
+        tr("Export logs"),
+        suggested,
+        tr("ZIP archive (*.zip)"));
+
+    if (target.isEmpty())
+    {
+        return;
+    }
+
+    std::size_t fileCount = 0;
+    std::wstring failure;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+
+    const bool created = core::CreateZipFromFolder(
+        std::filesystem::path(toWide(logDirectory)),
+        "log",
+        std::filesystem::path(toWide(target)),
+        fileCount,
+        failure);
+
+    QApplication::restoreOverrideCursor();
+
+    if (!created)
+    {
+        QMessageBox::warning(
+            this,
+            tr("Export failed"),
+            tr("The logs could not be packed:\n%1").arg(fromWide(failure)));
+        return;
+    }
+
+    showExportResult(target, static_cast<int>(fileCount));
+
+    statusBar()->showMessage(
+        tr("Exported %1 log files to %2").arg(static_cast<int>(fileCount)).arg(target),
+        kNotificationTimeoutMs);
+
+    revealInFileManager(target);
+}
+
+void MainWindow::deleteLogs()
+{
+    const QString gameDirectory = gameDirCombo_->currentText().trimmed();
+
+    if (gameDirectory.isEmpty() || !core::IsValidGameDirectory(toWide(gameDirectory)))
+    {
+        QMessageBox::warning(
+            this,
+            tr("No game folder"),
+            tr("Select a valid Cossacks 3 folder first."));
+        return;
+    }
+
+    const QString logDirectory = QDir(gameDirectory).filePath(QStringLiteral("log"));
+
+    // Enumerated again rather than taken from the list on screen: the game may
+    // have written more logs since the last refresh.
+    const std::vector<core::LogFileInfo> files = core::EnumerateLogFiles(toWide(gameDirectory));
+
+    if (files.empty())
+    {
+        QMessageBox::information(
+            this,
+            tr("Nothing to delete"),
+            QDir(logDirectory).exists()
+                ? tr("There are no log files in:\n%1").arg(logDirectory)
+                : tr("The game folder has no \"log\" directory yet."));
+        return;
+    }
+
+    qint64 totalBytes = 0;
+    QStringList names;
+
+    for (const core::LogFileInfo& file : files)
+    {
+        totalBytes += QFileInfo(fromWide(file.fullPath)).size();
+        names << fromWide(file.fileName);
+    }
+
+    const int fileCount = static_cast<int>(files.size());
+
+    QMessageBox confirmation(
+        QMessageBox::Warning,
+        tr("Delete log files"),
+        tr("Delete %1 log file%2 (%3) from:\n%4")
+            .arg(fileCount)
+            .arg(fileCount == 1 ? QString() : QStringLiteral("s"))
+            .arg(QLocale(QLocale::English).formattedDataSize(totalBytes))
+            .arg(logDirectory),
+        QMessageBox::NoButton,
+        this);
+
+    confirmation.setInformativeText(
+        tr("This cannot be undone. The game writes new log files the next time it runs."));
+    confirmation.setDetailedText(names.join(QLatin1Char('\n')));
+
+    QPushButton* confirmButton = confirmation.addButton(tr("Delete"), QMessageBox::DestructiveRole);
+    QPushButton* cancelButton = confirmation.addButton(QMessageBox::Cancel);
+    confirmation.setDefaultButton(cancelButton);
+    confirmation.setEscapeButton(cancelButton);
+
+    confirmation.exec();
+
+    if (confirmation.clickedButton() != confirmButton)
+    {
+        return;
+    }
+
+    core::LogDeletionResult result;
+    std::wstring failure;
+
+    const bool started = core::DeleteLogFiles(toWide(gameDirectory), result, failure);
+
+    // Whatever happened, the list should show what is left.
+    refreshLogs(false, false);
+
+    if (!started)
+    {
+        QMessageBox::warning(this, tr("Delete log files"), fromWide(failure));
+        return;
+    }
+
+    statusBar()->showMessage(
+        tr("Deleted %1 log file%2")
+            .arg(result.deleted)
+            .arg(result.deleted == 1 ? QString() : QStringLiteral("s")),
+        kNotificationTimeoutMs);
+
+    if (!result.failed.empty())
+    {
+        QStringList left;
+
+        for (const std::wstring& name : result.failed)
+        {
+            left << fromWide(name);
+        }
+
+        const int failedCount = static_cast<int>(result.failed.size());
+
+        // The usual reason is a game that is still running and holding its log
+        // open, which is worth saying out loud instead of silently keeping files.
+        QMessageBox::warning(
+            this,
+            tr("Delete log files"),
+            tr("%1 file%2 could not be deleted - close the game and try again:\n%3")
+                .arg(failedCount)
+                .arg(failedCount == 1 ? QString() : QStringLiteral("s"))
+                .arg(left.join(QStringLiteral("\n"))));
+    }
+}
+
+void MainWindow::showExportResult(const QString& archivePath, int fileCount)
+{
+    lastExportPath_ = archivePath;
+
+    const QFileInfo info(archivePath);
+
+    exportResultLabel_->setText(
+        tr("Exported %1 file%2 to %3 (%4)")
+            .arg(fileCount)
+            .arg(fileCount == 1 ? QString() : QStringLiteral("s"))
+            .arg(info.fileName())
+            .arg(QLocale(QLocale::English).formattedDataSize(info.size())));
+
+    exportResultLabel_->setToolTip(archivePath);
+    revealExportButton_->show();
+}
+
+void MainWindow::revealLastExport()
+{
+    if (!lastExportPath_.isEmpty())
+    {
+        revealInFileManager(lastExportPath_);
+    }
+}
+
+void MainWindow::revealInFileManager(const QString& filePath)
+{
+    const QString nativePath = QDir::toNativeSeparators(filePath);
+
+#if defined(_WIN32)
+    QProcess::startDetached(
+        QStringLiteral("explorer.exe"),
+        { QStringLiteral("/select,") + nativePath });
+#elif defined(__APPLE__)
+    QProcess::startDetached(QStringLiteral("open"), { QStringLiteral("-R"), nativePath });
+#else
+    // Linux file managers do not agree on a "select this file" switch, so the
+    // folder that holds the archive is opened instead.
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(filePath).absolutePath()));
+#endif
 }

@@ -38,4 +38,16 @@ inline QString PrimaryButtonStyle()
         .arg(kPrimaryColor, kDisabledSurfaceColor, kDisabledTextColor);
 }
 
+// Destructive button, used for actions that delete files. It is tinted like the
+// error colour so it is not mistaken for a harmless one.
+inline QString DangerButtonStyle()
+{
+    return QStringLiteral(
+        "QPushButton { background:#fef2f2; color:%1; border:1px solid #f3c9c4; "
+        "border-radius:8px; padding:0 16px; }"
+        "QPushButton:hover { background:#fee2e2; }"
+        "QPushButton:disabled { background:%2; color:%3; border:1px solid #dbe3ec; }")
+        .arg(kAccentColor, kDisabledSurfaceColor, kDisabledTextColor);
+}
+
 } // namespace ui

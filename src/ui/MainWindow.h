@@ -12,6 +12,7 @@
 #include "core/Types.h"
 
 class QComboBox;
+class QCheckBox;
 class QLabel;
 class QPushButton;
 class QSplitter;
@@ -32,6 +33,14 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
+    // Selecting a game folder and updating the mod is all a player needs; the
+    // log viewer is layered on top for troubleshooting.
+    enum class ViewMode
+    {
+        Simple,
+        Advanced
+    };
+
     explicit MainWindow(QWidget* parent = nullptr);
 
 protected:
@@ -50,12 +59,21 @@ private slots:
     void onLogSelected();
     void onCaretMoved();
     void onHeaderClicked(int section);
+    void onLogSettingToggled(bool enabled);
+    void exportLogs();
+    void revealLastExport();
+    void deleteLogs();
 
 private:
     void buildUi();
     void buildMenus();
     void loadSettings();
     void saveSettings();
+
+    // Switches between the simple and the advanced view and remembers the
+    // choice; applyViewMode() only renders the current one.
+    void setViewMode(ViewMode mode);
+    void applyViewMode();
 
     void showSelectedLog();
     void clearLoadedLogs();
@@ -74,6 +92,13 @@ private:
 
     // Keeps the mod manager in sync with the folder chosen above.
     void syncModGameDirectory();
+
+    // Reads "cossacks.ini" and mirrors its logging switches in the checkbox.
+    void refreshLogSettings();
+    QString cossacksIniPath() const;
+    void reportLogSettingFailure(const QString& message);
+    void showExportResult(const QString& archivePath, int fileCount);
+    void revealInFileManager(const QString& filePath);
 
     std::optional<QString> detectGameDirectory();
     std::optional<QString> detectSteamGameDirectory();
@@ -95,6 +120,18 @@ private:
     QTimer* refreshTimer_ = nullptr;
     QAction* autoUpdateAction_ = nullptr;
 
+    QAction* simpleViewAction_ = nullptr;
+    QAction* advancedViewAction_ = nullptr;
+    QWidget* logSection_ = nullptr;
+    QWidget* simpleViewSpacer_ = nullptr;
+
+    QCheckBox* logSettingsCheck_ = nullptr;
+    QLabel* logSettingsStatus_ = nullptr;
+    QPushButton* exportButton_ = nullptr;
+    QPushButton* revealExportButton_ = nullptr;
+    QPushButton* deleteLogsButton_ = nullptr;
+    QLabel* exportResultLabel_ = nullptr;
+
     mods::ModManager* modManager_ = nullptr;
     ModsPanel* modsPanel_ = nullptr;
     QTimer* modCheckTimer_ = nullptr;
@@ -102,6 +139,7 @@ private:
 
     // State
     std::vector<core::LogFileInfo> logFiles_;
+    ViewMode viewMode_ = ViewMode::Simple;
     bool autoUpdateLogs_ = true;
     bool autoModCheck_ = true;
     bool refreshing_ = false;
@@ -114,6 +152,15 @@ private:
     QStringList recentDirs_;
     int fileColumnWidth_ = 250;
     int modifiedColumnWidth_ = 168;
+
+    // Window size per view, so switching back does not throw away the size the
+    // user picked for the other one. The simple view only has the folder row and
+    // the mod card, which leaves the log viewer's room to the advanced view.
+    QSize simpleViewSize_{ 1000, 200 };
+    QSize advancedViewSize_{ 1600, 800 };
+
+    QString lastExportPath_;
+    bool updatingLogSettings_ = false;
 
     // Preview cache
     bool previewCacheValid_ = false;

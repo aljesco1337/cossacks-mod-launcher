@@ -44,6 +44,60 @@ std::vector<LogFileInfo> EnumerateLogFiles(const std::wstring& gameDir)
     return files;
 }
 
+bool DeleteLogFiles(const std::wstring& gameDir, LogDeletionResult& result, std::wstring& error)
+{
+    result = LogDeletionResult{};
+
+    if (gameDir.empty())
+    {
+        error = L"No game folder is selected.";
+        return false;
+    }
+
+    std::error_code ec;
+    const fs::path logsDirectory = fs::path(gameDir) / L"log";
+
+    if (!fs::is_directory(logsDirectory, ec))
+    {
+        error = L"The game folder has no \"log\" directory.";
+        return false;
+    }
+
+    for (fs::directory_iterator it(logsDirectory, ec), end;
+         !ec && it != end;
+         it.increment(ec))
+    {
+        std::error_code fileError;
+        const fs::path path = it->path();
+
+        // Subfolders stay untouched: the log list shows the files next to them,
+        // and those are the ones the user asked to delete.
+        if (!it->is_regular_file(fileError))
+        {
+            continue;
+        }
+
+        if (fs::remove(path, fileError) && !fileError)
+        {
+            result.deleted++;
+        }
+        else
+        {
+            result.failed.push_back(path.filename().wstring());
+        }
+    }
+
+    // The iteration itself failed, so the folder could not be read to the end.
+    // Whatever was deleted before that stays deleted, which "result" reports.
+    if (ec)
+    {
+        error = L"The log folder could not be read completely.";
+        return false;
+    }
+
+    return true;
+}
+
 void SortLogFiles(std::vector<LogFileInfo>& files, bool descending)
 {
     std::sort(
