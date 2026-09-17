@@ -22,6 +22,9 @@ public:
     explicit ModsPanel(mods::ModManager* manager, QWidget* parent = nullptr);
     ~ModsPanel() override;
 
+    // Re-applies the colours of the current theme (see ui/Theme.h).
+    void applyTheme();
+
 private:
     void refresh();
     void onActionClicked();

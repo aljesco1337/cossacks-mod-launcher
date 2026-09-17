@@ -75,13 +75,6 @@ constexpr int kModCheckIntervalMs = 6 * 60 * 60 * 1000;
 
 constexpr int kNotificationTimeoutMs = 8000;
 
-using ui::kAccentColor;
-using ui::kBackgroundColor;
-using ui::kBorderColor;
-using ui::kMutedColor;
-using ui::kSurfaceColor;
-using ui::kTextColor;
-
 QString fromWide(const std::wstring& value)
 {
     return QString::fromStdWString(value);
@@ -259,9 +252,7 @@ void MainWindow::buildUi()
     resize(advancedViewSize_);
 
     auto* central = new QWidget(this);
-    central->setStyleSheet(
-        QStringLiteral("QWidget { background: %1; color: %2; }").arg(kBackgroundColor, kTextColor)
-    );
+    central->setObjectName(QStringLiteral("CentralPane"));
 
     auto* mainLayout = new QVBoxLayout(central);
     mainLayout->setContentsMargins(24, 20, 24, 16);
@@ -283,12 +274,10 @@ void MainWindow::buildUi()
 
     browseButton_ = new QPushButton(tr("Browse"), central);
     browseButton_->setMinimumHeight(32);
-    browseButton_->setStyleSheet(ui::NeutralButtonStyle());
     topBar->addWidget(browseButton_);
 
     detectButton_ = new QPushButton(tr("Auto-detect"), central);
     detectButton_->setMinimumHeight(32);
-    detectButton_->setStyleSheet(ui::PrimaryButtonStyle());
     topBar->addWidget(detectButton_);
 
     mainLayout->addLayout(topBar);
@@ -313,24 +302,19 @@ void MainWindow::buildUi()
     logSettingsCheck_ = new QCheckBox(tr("Enable log files"), logSection_);
 
     logSettingsStatus_ = new QLabel(logSection_);
-    logSettingsStatus_->setStyleSheet(QStringLiteral("color:%1;").arg(kMutedColor));
 
     exportResultLabel_ = new QLabel(logSection_);
-    exportResultLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(kTextColor));
 
     revealExportButton_ = new QPushButton(tr("Show in folder"), logSection_);
     revealExportButton_->setMinimumHeight(32);
-    revealExportButton_->setStyleSheet(ui::NeutralButtonStyle());
     revealExportButton_->hide();
 
     exportButton_ = new QPushButton(tr("Export logs..."), logSection_);
     exportButton_->setMinimumHeight(32);
-    exportButton_->setStyleSheet(ui::NeutralButtonStyle());
     exportButton_->setToolTip(tr("Compresses everything in the game's log folder into one ZIP file."));
 
     deleteLogsButton_ = new QPushButton(tr("Delete logs..."), logSection_);
     deleteLogsButton_->setMinimumHeight(32);
-    deleteLogsButton_->setStyleSheet(ui::DangerButtonStyle());
     deleteLogsButton_->setToolTip(tr("Removes the log files after a confirmation."));
 
     logTools->addWidget(logSettingsCheck_);
@@ -354,17 +338,13 @@ void MainWindow::buildUi()
     auto* logFilesLabel = new QLabel(tr("Log files"), central);
     logFilesLabel->setFont(sectionFont);
     listMetaLabel_ = new QLabel(tr("No logs"), central);
-    listMetaLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(kMutedColor));
 
     auto* previewLabel = new QLabel(tr("Preview"), central);
     previewLabel->setFont(sectionFont);
     contentMetaLabel_ = new QLabel(tr("No log selected"), central);
-    contentMetaLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(kMutedColor));
 
     errorCountLabel_ = new QLabel(tr("Errors: 0"), central);
-    errorCountLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(kMutedColor));
     criticalCountLabel_ = new QLabel(tr("Critical: 0"), central);
-    criticalCountLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(kMutedColor));
 
     labels->addWidget(logFilesLabel);
     labels->addWidget(listMetaLabel_);
@@ -389,9 +369,6 @@ void MainWindow::buildUi()
     logTable_->horizontalHeader()->setStretchLastSection(false);
     logTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
     logTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
-    logTable_->setStyleSheet(
-        QStringLiteral("QTableWidget { background:%1; color:%2; border:1px solid %3; }").arg(kSurfaceColor, kTextColor, kBorderColor)
-    );
 
     auto* rightPane = new QWidget(splitter_);
     auto* rightLayout = new QVBoxLayout(rightPane);
@@ -405,9 +382,6 @@ void MainWindow::buildUi()
     preview_->setReadOnly(true);
     preview_->setLineWrapMode(QTextEdit::NoWrap);
     preview_->setFont(monoFont);
-    preview_->setStyleSheet(
-        QStringLiteral("QTextEdit { background:%1; color:%2; border:1px solid %3; }").arg(kSurfaceColor, kTextColor, kBorderColor)
-    );
     rightLayout->addWidget(preview_, 1);
 
     errorPane_ = new QTextEdit(rightPane);
@@ -415,11 +389,6 @@ void MainWindow::buildUi()
     errorPane_->setLineWrapMode(QTextEdit::NoWrap);
     errorPane_->setFont(monoFont);
     errorPane_->setMaximumHeight(330);
-    errorPane_->setStyleSheet(
-        QStringLiteral(
-            "QTextEdit { background:#fff7ed; color:%1; border:1px solid %2; border-left:4px solid %2; }")
-            .arg(kTextColor, kAccentColor)
-    );
     errorPane_->hide();
     rightLayout->addWidget(errorPane_);
 
@@ -511,6 +480,35 @@ void MainWindow::buildMenus()
     addAction(simpleViewAction_);
     addAction(advancedViewAction_);
 
+    viewMenu->addSeparator();
+
+    QMenu* themeMenu = viewMenu->addMenu(tr("&Theme"));
+
+    auto* themeGroup = new QActionGroup(this);
+    themeGroup->setExclusive(true);
+
+    lightThemeAction_ = themeMenu->addAction(tr("&Light"));
+    lightThemeAction_->setCheckable(true);
+    lightThemeAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+L")));
+    themeGroup->addAction(lightThemeAction_);
+
+    darkThemeAction_ = themeMenu->addAction(tr("&Dark"));
+    darkThemeAction_->setCheckable(true);
+    darkThemeAction_->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+D")));
+    themeGroup->addAction(darkThemeAction_);
+
+    connect(lightThemeAction_, &QAction::triggered, this, [this]()
+    {
+        setThemeMode(ui::ThemeMode::Light);
+    });
+    connect(darkThemeAction_, &QAction::triggered, this, [this]()
+    {
+        setThemeMode(ui::ThemeMode::Dark);
+    });
+
+    addAction(lightThemeAction_);
+    addAction(darkThemeAction_);
+
     QMenu* helpMenu = menuBar()->addMenu(tr("&Help"));
     helpMenu->addAction(tr("&About..."), this, &MainWindow::showAbout);
 }
@@ -526,6 +524,9 @@ void MainWindow::loadSettings()
                         .compare(QStringLiteral("advanced"), Qt::CaseInsensitive) == 0
         ? ViewMode::Advanced
         : ViewMode::Simple;
+
+    ui::SetThemeMode(ui::ThemeModeFromName(
+        settings.value(QStringLiteral("settings/theme"), QStringLiteral("light")).toString()));
     sortDescending_ = settings.value(QStringLiteral("logList/modifiedDescending"), true).toBool();
     fileColumnWidth_ = settings.value(QStringLiteral("logList/fileColumnWidth"), 250).toInt();
     modifiedColumnWidth_ = settings.value(QStringLiteral("logList/modifiedColumnWidth"), 168).toInt();
@@ -573,6 +574,7 @@ void MainWindow::loadSettings()
     refreshRecentDirs();
     updateModifiedColumnTitle();
     applyViewMode();
+    applyTheme();
 }
 
 void MainWindow::saveSettings()
@@ -584,6 +586,7 @@ void MainWindow::saveSettings()
     settings.setValue(
         QStringLiteral("settings/viewMode"),
         viewMode_ == ViewMode::Advanced ? QStringLiteral("advanced") : QStringLiteral("simple"));
+    settings.setValue(QStringLiteral("settings/theme"), ui::ThemeModeName(ui::CurrentThemeMode()));
     settings.setValue(QStringLiteral("settings/gameDirectory"), gameDirCombo_->currentText().trimmed());
     settings.setValue(QStringLiteral("logList/modifiedDescending"), sortDescending_);
     settings.setValue(QStringLiteral("logList/fileColumnWidth"), logTable_->columnWidth(0));
@@ -637,6 +640,88 @@ void MainWindow::applyViewMode()
     // The simple view holds two rows, so it does not need the room the log
     // viewer takes.
     resize(advanced ? advancedViewSize_ : simpleViewSize_);
+}
+
+void MainWindow::setThemeMode(ui::ThemeMode mode)
+{
+    if (ui::CurrentThemeMode() == mode)
+    {
+        return;
+    }
+
+    ui::SetThemeMode(mode);
+    applyTheme();
+    saveSettings();
+}
+
+void MainWindow::applyTheme()
+{
+    const ui::Palette& colors = ui::Colors();
+
+    if (lightThemeAction_)
+    {
+        lightThemeAction_->setChecked(ui::CurrentThemeMode() == ui::ThemeMode::Light);
+    }
+
+    if (darkThemeAction_)
+    {
+        darkThemeAction_->setChecked(ui::CurrentThemeMode() == ui::ThemeMode::Dark);
+    }
+
+    // Qt's own widgets - menu bar, table headers, scroll bars, dialogs - follow
+    // the application palette.
+    qApp->setPalette(ui::ApplicationPalette());
+
+    // Everything below is styled by hand, so every colour has to be re-applied
+    // here; this is the single place that knows how the window looks.
+    if (QWidget* central = centralWidget())
+    {
+        central->setStyleSheet(
+            QStringLiteral("QWidget#CentralPane, QWidget#CentralPane QWidget { background:%1; color:%2; }")
+                .arg(colors.background, colors.text));
+    }
+
+    browseButton_->setStyleSheet(ui::NeutralButtonStyle());
+    detectButton_->setStyleSheet(ui::PrimaryButtonStyle());
+
+    logTable_->setStyleSheet(
+        QStringLiteral("QTableWidget { background:%1; color:%2; border:1px solid %3; }")
+            .arg(colors.surface, colors.text, colors.border));
+
+    preview_->setStyleSheet(
+        QStringLiteral("QTextEdit { background:%1; color:%2; border:1px solid %3; }")
+            .arg(colors.surface, colors.text, colors.border));
+
+    errorPane_->setStyleSheet(
+        QStringLiteral(
+            "QTextEdit { background:%1; color:%2; border:1px solid %3; border-left:4px solid %4; }")
+            .arg(colors.errorPane, colors.text, colors.border, colors.accent));
+
+    const QString mutedStyle = QStringLiteral("color:%1;").arg(colors.muted);
+
+    listMetaLabel_->setStyleSheet(mutedStyle);
+    contentMetaLabel_->setStyleSheet(mutedStyle);
+    logSettingsStatus_->setStyleSheet(mutedStyle);
+
+    exportResultLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(colors.text));
+
+    revealExportButton_->setStyleSheet(ui::NeutralButtonStyle());
+    exportButton_->setStyleSheet(ui::NeutralButtonStyle());
+    deleteLogsButton_->setStyleSheet(ui::DangerButtonStyle());
+
+    modsPanel_->applyTheme();
+
+    // The preview keeps the character formats of the previous theme inside its
+    // document, so the log has to be rendered again.
+    previewCacheValid_ = false;
+
+    if (logTable_->currentRow() >= 0)
+    {
+        showSelectedLog();
+    }
+
+    // Also re-colours the counters, which depend on the numbers they show.
+    updateStatusLabels();
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -958,12 +1043,10 @@ void MainWindow::updateStatusLabels()
         criticalCountLabel_->setText(tr("Critical: 0"));
     }
 
-    const QString errorColor = selectedErrorCount_ > 0
-        ? QStringLiteral("#b45309")
-        : QString::fromLatin1(kMutedColor);
-    const QString criticalColor = selectedCriticalCount_ > 0
-        ? QString::fromLatin1(kAccentColor)
-        : QString::fromLatin1(kMutedColor);
+    const ui::Palette& colors = ui::Colors();
+
+    const QString errorColor = selectedErrorCount_ > 0 ? colors.accentSoft : colors.muted;
+    const QString criticalColor = selectedCriticalCount_ > 0 ? colors.accent : colors.muted;
 
     errorCountLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(errorColor));
     criticalCountLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(criticalColor));
@@ -994,12 +1077,14 @@ void MainWindow::applyPreviewHighlighting()
 {
     QTextDocument* document = preview_->document();
 
+    const ui::Palette& colors = ui::Colors();
+
     const QString marker = QStringLiteral("CompileFramework() - compile global script error:");
 
     QTextCharFormat errorLineFormat;
     errorLineFormat.setFontWeight(QFont::Bold);
-    errorLineFormat.setForeground(QColor(153, 27, 27));
-    errorLineFormat.setBackground(QColor(254, 226, 226));
+    errorLineFormat.setForeground(ui::ToColor(colors.logLineText));
+    errorLineFormat.setBackground(ui::ToColor(colors.logLine));
 
     QTextCursor cursor(document);
     cursor.movePosition(QTextCursor::Start);
@@ -1024,7 +1109,7 @@ void MainWindow::applyPreviewHighlighting()
 
     QTextCharFormat errorPrefixFormat;
     errorPrefixFormat.setFontWeight(QFont::Bold);
-    errorPrefixFormat.setForeground(QColor(220, 38, 38));
+    errorPrefixFormat.setForeground(ui::ToColor(colors.errorPrefix));
 
     for (QTextBlock block = document->firstBlock(); block.isValid(); block = block.next())
     {

@@ -11,12 +11,6 @@
 #include "core/ModManifest.h"
 #include "mods/ModManager.h"
 
-using ui::kAccentColor;
-using ui::kBorderColor;
-using ui::kMutedColor;
-using ui::kSurfaceColor;
-using ui::kTextColor;
-
 namespace {
 
 constexpr int kProgressBarWidth = 200;
@@ -33,14 +27,6 @@ ModsPanel::ModsPanel(mods::ModManager* manager, QWidget* parent)
     , manager_(manager)
 {
     setObjectName(QStringLiteral("ModsPanel"));
-    setStyleSheet(
-        QStringLiteral(
-            "QFrame#ModsPanel { background:%1; border:1px solid %2; border-radius:10px; }"
-            "QLabel { background:transparent; }"
-            "QProgressBar { background:#e2e8f0; border:none; border-radius:6px; "
-            "text-align:center; color:%3; }"
-            "QProgressBar::chunk { background:#2563eb; border-radius:6px; }")
-            .arg(kSurfaceColor, kBorderColor, kTextColor));
 
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(16, 12, 16, 12);
@@ -54,7 +40,6 @@ ModsPanel::ModsPanel(mods::ModManager* manager, QWidget* parent)
     titleLabel_->setMinimumWidth(150);
 
     statusLabel_ = new QLabel(this);
-    statusLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(kMutedColor));
 
     progressBar_ = new QProgressBar(this);
     progressBar_->setFixedWidth(kProgressBarWidth);
@@ -71,6 +56,24 @@ ModsPanel::ModsPanel(mods::ModManager* manager, QWidget* parent)
     connect(actionButton_, &QPushButton::clicked, this, &ModsPanel::onActionClicked);
     connect(manager_, &mods::ModManager::StateChanged, this, &ModsPanel::refresh);
 
+    applyTheme();
+}
+
+void ModsPanel::applyTheme()
+{
+    const ui::Palette& colors = ui::Colors();
+
+    setStyleSheet(
+        QStringLiteral(
+            "QFrame#ModsPanel { background:%1; border:1px solid %2; border-radius:10px; }"
+            "QLabel { background:transparent; }"
+            "QProgressBar { background:%3; border:none; border-radius:6px; "
+            "text-align:center; color:%4; }"
+            "QProgressBar::chunk { background:%5; border-radius:6px; }")
+            .arg(colors.surface, colors.border, colors.progressTrack, colors.text, colors.primary));
+
+    // Re-applies the state colours as well: the status text and the button style
+    // depend on the palette.
     refresh();
 }
 
@@ -114,7 +117,8 @@ void ModsPanel::refresh()
         manager_->status() != mods::ModManager::Status::CheckFailed;
 
     statusLabel_->setStyleSheet(
-        QStringLiteral("color:%1;").arg(failureVisible ? kAccentColor : kMutedColor));
+        QStringLiteral("color:%1;")
+            .arg(failureVisible ? ui::Colors().accent : ui::Colors().muted));
 
     const QString error = manager_->lastError();
     statusLabel_->setToolTip(error);

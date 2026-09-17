@@ -138,6 +138,17 @@ resize a window the user already sized.
 The log entries in the **File** menu work from both views; *Select first compile
 error* switches to the advanced view so its result is actually visible.
 
+### Theme
+
+**View ▸ Theme** switches between **Light** (the default) and **Dark**
+(`Ctrl+Shift+L` / `Ctrl+Shift+D`), and the choice is remembered between runs.
+
+The theme covers the whole window - folder selector, mod card, log tools, log list,
+preview, compile-error pane and the dialogs - down to the colours of the highlighted
+error lines. Both palettes live in `src/ui/Theme.h`; widgets never hard-code a colour,
+they restyle themselves from the current palette when the theme changes
+(`MainWindow::applyTheme()`, `ModsPanel::applyTheme()`).
+
 ---
 
 ## Log files

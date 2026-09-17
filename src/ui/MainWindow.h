@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/Types.h"
+#include "Theme.h"
 
 class QComboBox;
 class QCheckBox;
@@ -75,6 +76,11 @@ private:
     void setViewMode(ViewMode mode);
     void applyViewMode();
 
+    // Switches between the light and the dark theme and remembers the choice;
+    // applyTheme() only renders the current one.
+    void setThemeMode(ui::ThemeMode mode);
+    void applyTheme();
+
     void showSelectedLog();
     void clearLoadedLogs();
     void updateStatusLabels();
@@ -122,6 +128,8 @@ private:
 
     QAction* simpleViewAction_ = nullptr;
     QAction* advancedViewAction_ = nullptr;
+    QAction* lightThemeAction_ = nullptr;
+    QAction* darkThemeAction_ = nullptr;
     QWidget* logSection_ = nullptr;
     QWidget* simpleViewSpacer_ = nullptr;
 
