@@ -386,4 +386,14 @@ bool SetModEnabled(
     return EnsureModsIniStates(gameDirectory / L"mods", states, changed, error);
 }
 
+bool MoveMod(
+    const std::filesystem::path& gameDirectory,
+    const std::string& dir,
+    bool moveUp,
+    bool& changed,
+    std::string& error)
+{
+    return MoveModsIniRecord(gameDirectory / L"mods", dir, moveUp, changed, error);
+}
+
 } // namespace core

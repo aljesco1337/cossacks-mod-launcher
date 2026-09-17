@@ -16,6 +16,12 @@ class QTableWidgetItem;
 // there is no separate save step and closing the dialog needs no confirmation. A
 // write that fails is reported in the dialog and the box goes back to where it
 // was, because the file was left untouched.
+//
+// The order of the list is part of the file as well, so the selected record can be
+// moved one place up or down (core::MoveMod); that too is written straight away. A
+// mod the file does not list yet is given its record - switched on, the same record
+// the checkbox writes - by the move, because a record the file does not have has no
+// place to move to.
 class ManageModsDialog : public QDialog
 {
     Q_OBJECT
@@ -35,9 +41,15 @@ public:
 private:
     // Fills the table from mods.ini and the folders next to it. Returns false when
     // the list cannot be read (a UTF-16 mods.ini, for instance).
-    bool reload();
+    //
+    // "selectDir" is the record to leave selected afterwards - the one that was
+    // just moved - so the buttons stay on it.
+    bool reload(const QString& selectDir = QString());
 
     void onItemChanged(QTableWidgetItem* item);
+    void moveSelected(bool moveUp);
+    void selectRow(const QString& dir);
+    void updateMoveButtons();
     void showStatus(const QString& message, bool failure);
 
     QString modsIniPath() const;
@@ -48,6 +60,8 @@ private:
     QLabel* pathLabel_ = nullptr;
     QLabel* statusLabel_ = nullptr;
     QTableWidget* table_ = nullptr;
+    QPushButton* moveUpButton_ = nullptr;
+    QPushButton* moveDownButton_ = nullptr;
     QPushButton* closeButton_ = nullptr;
 
     // Set while the table is filled: filling it must not look like the user

@@ -23,9 +23,25 @@ namespace {
 // switching a checkbox does not have to look it up in the table again.
 constexpr int kDirRole = Qt::UserRole;
 
+// Whether mods.ini already has a record for the row, which is what decides whether
+// the move buttons can act on it.
+constexpr int kListedRole = Qt::UserRole + 1;
+
 QString Text(const std::string& value)
 {
     return QString::fromUtf8(value.data(), static_cast<int>(value.size()));
+}
+
+// The tooltip of both items of a row. A mod without a record moves the way it does
+// because a move lists it first (see moveSelected()).
+QString RowTooltip(const QString& dir, bool listed)
+{
+    return listed
+        ? ManageModsDialog::tr("%1\nListed in mods.ini.").arg(dir)
+        : ManageModsDialog::tr(
+              "%1\nNot in mods.ini yet. Switching it on adds it, and moving it "
+              "adds its record switched on.")
+              .arg(dir);
 }
 
 } // namespace
@@ -44,7 +60,9 @@ ManageModsDialog::ManageModsDialog(const QString& gameDirectory, QWidget* parent
 
     hintLabel_ = new QLabel(
         tr("Every mod the game can load. A switch is written to the file below straight "
-           "away, and the game picks it up the next time it starts."),
+           "away, and the game picks it up the next time it starts. The order of the "
+           "list is the order mods.ini keeps the mods in: select a mod and move it up "
+           "or down."),
         this);
     hintLabel_->setWordWrap(true);
     layout->addWidget(hintLabel_);
@@ -55,8 +73,9 @@ ManageModsDialog::ManageModsDialog(const QString& gameDirectory, QWidget* parent
 
     table_ = new QTableWidget(0, 2, this);
     table_->setHorizontalHeaderLabels({ tr("Mod"), tr("Folder") });
-    table_->setSelectionMode(QAbstractItemView::NoSelection);
-    table_->setFocusPolicy(Qt::NoFocus);
+    // One row at a time: a row is what "Move up"/"Move down" acts on.
+    table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table_->setAlternatingRowColors(false);
     table_->verticalHeader()->setVisible(false);
@@ -71,6 +90,16 @@ ManageModsDialog::ManageModsDialog(const QString& gameDirectory, QWidget* parent
     statusLabel_ = new QLabel(this);
     statusLabel_->setWordWrap(true);
 
+    moveUpButton_ = new QPushButton(tr("Move up"), this);
+    moveUpButton_->setMinimumHeight(32);
+    moveUpButton_->setToolTip(
+        tr("Moves the selected mod one place up in mods.ini."));
+
+    moveDownButton_ = new QPushButton(tr("Move down"), this);
+    moveDownButton_->setMinimumHeight(32);
+    moveDownButton_->setToolTip(
+        tr("Moves the selected mod one place down in mods.ini."));
+
     closeButton_ = new QPushButton(tr("Close"), this);
     closeButton_->setMinimumHeight(32);
     closeButton_->setDefault(true);
@@ -78,12 +107,21 @@ ManageModsDialog::ManageModsDialog(const QString& gameDirectory, QWidget* parent
     auto* buttons = new QHBoxLayout();
     buttons->setSpacing(12);
     buttons->addWidget(statusLabel_, 1);
+    buttons->addWidget(moveUpButton_);
+    buttons->addWidget(moveDownButton_);
     buttons->addWidget(closeButton_);
 
     layout->addLayout(buttons);
 
     connect(closeButton_, &QPushButton::clicked, this, &QDialog::accept);
+    connect(moveUpButton_, &QPushButton::clicked, this, [this] { moveSelected(true); });
+    connect(moveDownButton_, &QPushButton::clicked, this, [this] { moveSelected(false); });
     connect(table_, &QTableWidget::itemChanged, this, &ManageModsDialog::onItemChanged);
+    connect(
+        table_,
+        &QTableWidget::itemSelectionChanged,
+        this,
+        &ManageModsDialog::updateMoveButtons);
 
     applyTheme();
     reload();
@@ -99,17 +137,27 @@ void ManageModsDialog::applyTheme()
     pathLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(colors.muted));
     statusLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(colors.muted));
     closeButton_->setStyleSheet(ui::NeutralButtonStyle());
+    moveUpButton_->setStyleSheet(ui::NeutralButtonStyle());
+    moveDownButton_->setStyleSheet(ui::NeutralButtonStyle());
 
-    // The list is a set of checkboxes, not a list of selectable rows, so the
-    // current and hovered items must not be painted as if they were.
+    // The list is a set of checkboxes with one row selected at a time, so hover and
+    // focus have to stay quiet (with a stylesheet Qt also paints a frame on the item
+    // under the mouse) and the selection is what carries the colour.
     table_->setStyleSheet(
         QStringLiteral(
             "QTableWidget { background:%1; color:%2; border:1px solid %3; }"
-            "QTableWidget::item:selected, QTableWidget::item:hover, QTableWidget::item:focus "
+            "QTableWidget::item:hover, QTableWidget::item:focus "
             "{ background:%1; color:%2; border:none; }"
+            "QTableWidget::item:selected { background:%5; color:%6; border:none; }"
             "QHeaderView::section { background:%4; color:%2; border:none; border-bottom:1px solid %3; "
             "padding:6px; }")
-            .arg(colors.surface, colors.text, colors.border, colors.background));
+            .arg(
+                colors.surface,
+                colors.text,
+                colors.border,
+                colors.background,
+                colors.primary,
+                colors.primaryText));
 }
 
 QString ManageModsDialog::modsIniPath() const
@@ -118,7 +166,7 @@ QString ManageModsDialog::modsIniPath() const
         .filePath(QStringLiteral("mods/") + QString::fromLatin1(core::kModsIniFileName));
 }
 
-bool ManageModsDialog::reload()
+bool ManageModsDialog::reload(const QString& selectDir)
 {
     std::vector<core::ModListEntry> entries;
     std::string error;
@@ -149,21 +197,20 @@ bool ManageModsDialog::reload()
         const core::ModListEntry& entry = entries[index];
 
         const QString dir = Text(entry.dir);
-        const QString tooltip = entry.listed
-            ? tr("%1\nListed in mods.ini.").arg(dir)
-            : tr("%1\nNot in mods.ini yet. Switching it on adds it.").arg(dir);
+        const QString tooltip = RowTooltip(dir, entry.listed);
 
         auto* nameItem = new QTableWidgetItem(Text(entry.name));
         nameItem->setFlags(
             (nameItem->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
         nameItem->setCheckState(entry.enabled ? Qt::Checked : Qt::Unchecked);
         nameItem->setData(kDirRole, dir);
+        nameItem->setData(kListedRole, entry.listed);
         nameItem->setToolTip(tooltip);
 
-        // Read-only, and not selectable either: the row is nothing but a checkbox
-        // with a description.
+        // Read-only, but selectable: a click anywhere in the row is what the move
+        // buttons act on.
         auto* dirItem = new QTableWidgetItem(dir);
-        dirItem->setFlags(Qt::ItemIsEnabled);
+        dirItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
         dirItem->setToolTip(tooltip);
 
         table_->setItem(index, 0, nameItem);
@@ -173,8 +220,18 @@ bool ManageModsDialog::reload()
     table_->setUpdatesEnabled(true);
     populating_ = false;
 
-    // Nothing is selected, so the first row must not look as if it were.
-    table_->setCurrentItem(nullptr);
+    if (selectDir.isEmpty())
+    {
+        // Nothing is selected, so no row may look as if it were, and the move
+        // buttons have nothing to act on.
+        table_->setCurrentItem(nullptr);
+    }
+    else
+    {
+        selectRow(selectDir);
+    }
+
+    updateMoveButtons();
 
     const int count = static_cast<int>(entries.size());
 
@@ -241,10 +298,146 @@ void ManageModsDialog::onItemChanged(QTableWidgetItem* item)
 
     changeCount_++;
 
+    // Switching a mod on appends its record at the end of the list, so the row is
+    // one the move buttons can act on now. Blocked around the writes, or setting
+    // the data would run this handler again.
+    if (enabled)
+    {
+        const QSignalBlocker blocker(table_);
+
+        item->setData(kListedRole, true);
+        item->setToolTip(RowTooltip(dir, true));
+
+        if (QTableWidgetItem* dirItem = table_->item(item->row(), 1))
+        {
+            dirItem->setToolTip(RowTooltip(dir, true));
+        }
+    }
+
+    updateMoveButtons();
+
     showStatus(
         tr("%1 is switched %2. Saved to mods.ini.")
             .arg(name, enabled ? tr("on") : tr("off")),
         false);
+}
+
+void ManageModsDialog::moveSelected(bool moveUp)
+{
+    const int row = table_->currentRow();
+
+    if (row < 0)
+    {
+        return;
+    }
+
+    const QTableWidgetItem* item = table_->item(row, 0);
+
+    if (item == nullptr)
+    {
+        return;
+    }
+
+    const QString dir = item->data(kDirRole).toString();
+    const QString name = item->text();
+
+    bool changed = false;
+    std::string error;
+
+    if (!core::MoveMod(
+            mods::ToPath(gameDirectory_),
+            dir.toUtf8().toStdString(),
+            moveUp,
+            changed,
+            error))
+    {
+        showStatus(tr("%1 could not be moved: %2").arg(name, Text(error)), true);
+        return;
+    }
+
+    if (!changed)
+    {
+        showStatus(
+            tr("%1 is already %2 in the list.").arg(name, moveUp ? tr("first") : tr("last")),
+            false);
+        return;
+    }
+
+    changeCount_++;
+
+    // Read the file back: the new order, the switch of a mod that had to be listed
+    // first and the row the buttons act on then all agree with it.
+    reload(dir);
+
+    showStatus(
+        tr("%1 moved %2. Saved to mods.ini.").arg(name, moveUp ? tr("up") : tr("down")),
+        false);
+}
+
+void ManageModsDialog::selectRow(const QString& dir)
+{
+    for (int row = 0; row < table_->rowCount(); row++)
+    {
+        const QTableWidgetItem* item = table_->item(row, 0);
+
+        if (item != nullptr &&
+            item->data(kDirRole).toString().compare(dir, Qt::CaseInsensitive) == 0)
+        {
+            table_->setCurrentCell(row, 0);
+            table_->scrollToItem(item);
+            return;
+        }
+    }
+
+    table_->setCurrentItem(nullptr);
+}
+
+void ManageModsDialog::updateMoveButtons()
+{
+    const int row = table_->currentRow();
+    const QTableWidgetItem* item = row < 0 ? nullptr : table_->item(row, 0);
+
+    bool up = false;
+    bool down = false;
+
+    if (item != nullptr)
+    {
+        if (!item->data(kListedRole).toBool())
+        {
+            // Not in mods.ini yet: a move lists the mod first (switched on) and
+            // then places the new record, so both directions have somewhere to go.
+            up = true;
+            down = true;
+        }
+        else
+        {
+            // The records of mods.ini come first and in file order, so the first
+            // and the last row carrying a record are the ends of the list.
+            int first = -1;
+            int last = -1;
+
+            for (int index = 0; index < table_->rowCount(); index++)
+            {
+                const QTableWidgetItem* candidate = table_->item(index, 0);
+
+                if (candidate != nullptr && candidate->data(kListedRole).toBool())
+                {
+                    if (first < 0)
+                    {
+                        first = index;
+                    }
+
+                    last = index;
+                }
+            }
+
+            up = row > first;
+            down = row < last;
+        }
+    }
+
+    moveUpButton_->setEnabled(up);
+    moveDownButton_->setEnabled(down);
 }
 
 void ManageModsDialog::showStatus(const QString& message, bool failure)

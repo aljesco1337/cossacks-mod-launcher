@@ -118,6 +118,21 @@ bool ApplyModsIniStates(
     std::string& updatedText,
     std::string& error);
 
+// Moves one record one place up or down in the "mods" struct, which is how the
+// order the game reads the list in is changed.
+//
+// The two records trade places: each keeps its own keys ("dis", "title", anything
+// else) and its own indentation, and every other line - the remaining records, the
+// lines between the two, comments - stays where it is. "updatedText" stays empty
+// when there is nothing to move: the record is not in the file, or it is already
+// the first/last one.
+bool SwapModsIniRecords(
+    const std::string& text,
+    const std::string& dir,
+    bool moveUp,
+    std::string& updatedText,
+    std::string& error);
+
 // Reads "<modsFolder>/mods.ini" and parses it, so a caller that only wants to look
 // at the list does not have to know how the file is stored. The UTF-8 BOM is
 // accepted and removed; a UTF-16 file is refused, because editing it would corrupt
@@ -145,6 +160,19 @@ bool ReadModTitle(
 bool EnsureModsIniStates(
     const std::filesystem::path& modsFolder,
     const std::vector<ModsIniRecordState>& states,
+    bool& changed,
+    std::string& error);
+
+// Reads "<modsFolder>/mods.ini", moves the record and writes the file back once.
+//
+// A record the file does not have yet has no place to move to, so it is listed
+// first - switched on, the record switching it on by hand would add - and the move
+// then places it. Nothing is written when the record is already where it should be.
+// "changed" reports whether the file was modified.
+bool MoveModsIniRecord(
+    const std::filesystem::path& modsFolder,
+    const std::string& dir,
+    bool moveUp,
     bool& changed,
     std::string& error);
 

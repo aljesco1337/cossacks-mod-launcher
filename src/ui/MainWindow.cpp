@@ -310,10 +310,12 @@ void MainWindow::buildUi()
     manageModsButton_ = new QPushButton(tr("Manage mods..."), modsTools_);
     manageModsButton_->setMinimumHeight(32);
     manageModsButton_->setToolTip(
-        tr("Switches the mods the game loads on and off in its mods.ini."));
+        tr("Switches the mods the game loads on and off in its mods.ini, and changes "
+           "the order it lists them in."));
 
     manageModsHint_ = new QLabel(
-        tr("Choose which mods the game loads; the game picks the change up the next time it starts."),
+        tr("Choose which mods the game loads, and in which order; the game picks the change "
+           "up the next time it starts."),
         modsTools_);
 
     modsToolsLayout->addWidget(manageModsButton_);

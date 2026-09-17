@@ -309,6 +309,22 @@ the launcher:
 "compatibleMods": [ "3398700006", "..\..\workshop\content\333420\3398700006" ]
 ```
 
+### Editing the list by hand: **Manage mods...**
+
+The dialog lists every mod the game folder knows: the records `mods.ini` has, in
+the order the file keeps them, followed by the mod folders and workshop items the
+file does not mention yet.
+
+| Action | What it writes |
+| --- | --- |
+| Ticking a switch | `core::SetModEnabled` rewrites that record's `dis` line. Switching on a mod without a record appends one, switched on; switching a mod without a record off changes nothing, because the game would not load it either way. |
+| **Move up** / **Move down** | `core::MoveMod` swaps the selected record with its neighbour, which is what changes the order the list keeps the mods in. Only those two blocks trade places: a record's flag, its title and any other key travel with it, and the lines between the two - comments, blank lines - stay where they are. A mod without a record is listed switched on first and then moved. |
+
+Every change is written straight away: there is no OK button, so closing the
+dialog needs no confirmation. A write that fails - a read-only file, or a
+`mods.ini` stored as UTF-16 - is reported in the dialog and the file is left
+untouched.
+
 ### When updates are checked
 
 1. Shortly after startup, and every six hours while the app is running.

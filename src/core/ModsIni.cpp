@@ -389,6 +389,44 @@ bool ReadListText(
     return true;
 }
 
+// Writes the list back exactly as it was read: BOM first, then the text the editor
+// produced. The folder is created when it is not there yet.
+bool WriteListText(
+    const fs::path& filePath,
+    const std::string& bom,
+    const std::string& text,
+    std::string& error)
+{
+    std::error_code ec;
+    fs::create_directories(filePath.parent_path(), ec);
+
+    if (ec)
+    {
+        error = "the mods folder could not be created";
+        return false;
+    }
+
+    std::ofstream output(filePath, std::ios::binary | std::ios::trunc);
+
+    if (!output)
+    {
+        error = "the mod list could not be written";
+        return false;
+    }
+
+    output.write(bom.data(), static_cast<std::streamsize>(bom.size()));
+    output.write(text.data(), static_cast<std::streamsize>(text.size()));
+    output.close();
+
+    if (!output)
+    {
+        error = "the mod list could not be written";
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 std::string NormalizeModsIniDir(const std::string& dir)
@@ -812,6 +850,109 @@ bool ApplyModsIniStates(
     return true;
 }
 
+bool SwapModsIniRecords(
+    const std::string& text,
+    const std::string& dir,
+    bool moveUp,
+    std::string& updatedText,
+    std::string& error)
+{
+    updatedText.clear();
+    error.clear();
+
+    if (NormalizeModsIniDir(dir).empty())
+    {
+        error = "the mod directory is empty";
+        return false;
+    }
+
+    std::vector<std::string> lines = SplitLines(text);
+    std::vector<Element> elements;
+
+    if (!FindElements(lines, elements, error))
+    {
+        return false;
+    }
+
+    // The records in the order the file has them. An element without a "dir" line
+    // is not a mod the caller can name, so it is not part of that order - and
+    // because only the two records trade places, it keeps its own line where it is.
+    std::vector<std::size_t> records;
+
+    for (std::size_t index = 0; index < elements.size(); index++)
+    {
+        if (!NormalizeModsIniDir(elements[index].dir).empty())
+        {
+            records.push_back(index);
+        }
+    }
+
+    std::size_t position = kNotFound;
+
+    for (std::size_t index = 0; index < records.size(); index++)
+    {
+        if (SameModsIniDir(elements[records[index]].dir, dir))
+        {
+            position = index;
+            break;
+        }
+    }
+
+    // A record the list does not have has no place to move to, and one at the top
+    // or the bottom is already as far as it goes.
+    if (position == kNotFound ||
+        (moveUp ? position == 0 : position + 1 == records.size()))
+    {
+        return true;
+    }
+
+    const Element& moving = elements[records[position]];
+    const Element& neighbour = elements[records[moveUp ? position - 1 : position + 1]];
+
+    const auto blockAt = [&lines](const Element& element)
+    {
+        return std::vector<std::string>(
+            lines.begin() + static_cast<std::ptrdiff_t>(element.beginLine),
+            lines.begin() + static_cast<std::ptrdiff_t>(element.endLine) + 1);
+    };
+
+    const std::vector<std::string> movingBlock = blockAt(moving);
+    const std::vector<std::string> neighbourBlock = blockAt(neighbour);
+
+    // Whatever sits between the two records - blank lines, comments - is left in
+    // place, so the records trade places around it.
+    const std::size_t gapFirst = std::min(moving.beginLine, neighbour.beginLine);
+    const std::size_t gapLast = std::max(moving.endLine, neighbour.endLine);
+    const std::size_t gapStart = moveUp ? neighbour.endLine + 1 : moving.endLine + 1;
+    const std::size_t gapEnd = moveUp ? moving.beginLine : neighbour.beginLine;  // exclusive
+
+    const std::vector<std::string> gap(
+        lines.begin() + static_cast<std::ptrdiff_t>(gapStart),
+        lines.begin() + static_cast<std::ptrdiff_t>(gapEnd));
+
+    std::vector<std::string> replacement;
+
+    const auto append = [&replacement](const std::vector<std::string>& block)
+    {
+        replacement.insert(replacement.end(), block.begin(), block.end());
+    };
+
+    append(moveUp ? movingBlock : neighbourBlock);
+    append(gap);
+    append(moveUp ? neighbourBlock : movingBlock);
+
+    lines.erase(
+        lines.begin() + static_cast<std::ptrdiff_t>(gapFirst),
+        lines.begin() + static_cast<std::ptrdiff_t>(gapLast) + 1);
+    lines.insert(
+        lines.begin() + static_cast<std::ptrdiff_t>(gapFirst),
+        replacement.begin(),
+        replacement.end());
+
+    updatedText = JoinLines(lines, DetectLineEnding(text));
+    return true;
+}
+
 bool ReadModsIni(
     const std::filesystem::path& modsFolder,
     ModsIniDocument& document,
@@ -905,30 +1046,113 @@ bool EnsureModsIniStates(
         return true;
     }
 
-    std::error_code ec;
-    fs::create_directories(modsFolder, ec);
-
-    if (ec)
+    if (!WriteListText(filePath, bom, updated, error))
     {
-        error = "the mods folder could not be created";
         return false;
     }
 
-    std::ofstream output(filePath, std::ios::binary | std::ios::trunc);
+    changed = true;
+    return true;
+}
 
-    if (!output)
+bool MoveModsIniRecord(
+    const std::filesystem::path& modsFolder,
+    const std::string& dir,
+    bool moveUp,
+    bool& changed,
+    std::string& error)
+{
+    changed = false;
+
+    const std::string target = Trim(dir);
+
+    if (NormalizeModsIniDir(target).empty())
     {
-        error = "the mod list could not be written";
+        error = "the mod directory is empty";
         return false;
     }
 
-    output.write(bom.data(), static_cast<std::streamsize>(bom.size()));
-    output.write(updated.data(), static_cast<std::streamsize>(updated.size()));
-    output.close();
+    const fs::path filePath = modsFolder / kModsIniFileName;
 
-    if (!output)
+    std::string bom;
+    std::string bytes;
+    bool exists = false;
+
+    if (!ReadListText(filePath, bom, bytes, exists, error))
     {
-        error = "the mod list could not be written";
+        return false;
+    }
+
+    // A record the file does not have yet has no place to move to, so it is listed
+    // the way switching the mod on lists it - switched on, at the end - and the move
+    // then carries it to where the user asked for.
+    ModsIniDocument document;
+
+    if (!ParseModsIni(bytes, document, error))
+    {
+        return false;
+    }
+
+    bool listed = false;
+
+    for (const ModsIniEntry& entry : document.entries)
+    {
+        if (SameModsIniDir(entry.dir, target))
+        {
+            listed = true;
+            break;
+        }
+    }
+
+    std::string current = bytes;
+
+    // Whether the text the editor produced differs from the file, i.e. whether
+    // something has to be written at all.
+    bool updated = false;
+
+    if (!listed)
+    {
+        std::string added;
+
+        if (!ApplyModsIniStates(
+                current,
+                { ModsIniRecordState{ target, ModsIniState::Enabled } },
+                added,
+                error))
+        {
+            return false;
+        }
+
+        if (!added.empty())
+        {
+            current = std::move(added);
+            updated = true;
+        }
+    }
+
+    std::string moved;
+
+    if (!SwapModsIniRecords(current, target, moveUp, moved, error))
+    {
+        return false;
+    }
+
+    if (!moved.empty())
+    {
+        current = std::move(moved);
+        updated = true;
+    }
+
+    if (!updated)
+    {
+        // The record is already where it should be.
+        return true;
+    }
+
+    if (!WriteListText(filePath, bom, current, error))
+    {
+        // Nothing was written, so the file is still the one that was read.
+        changed = false;
         return false;
     }
 
