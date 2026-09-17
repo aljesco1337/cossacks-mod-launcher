@@ -1,5 +1,9 @@
 {
   "schemaVersion": 1,
+  "app": {
+    "versionLabel": "0.1.0",
+    "releasePageUrl": "https://github.com/aljesco1337/cossacks-mod-launcher/releases/latest"
+  },
   "compatibleMods": [ "3464878862" ],
   "mods": {
     "ren": {
