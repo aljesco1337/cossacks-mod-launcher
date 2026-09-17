@@ -192,6 +192,51 @@ inline QPalette ApplicationPalette()
     return palette;
 }
 
+// The menu bar and its drop-down menus. Qt draws these itself, but the native
+// Windows styles (windowsvista/windows11) paint them with the system theme and
+// ignore the application palette, which leaves the dark theme with pale text on
+// a pale background. Styling them by hand is what makes the top bar readable on
+// Windows; only colours and the hover highlight are set, so the item spacing
+// still comes from the platform style. The rules for the drop-downs travel with
+// the menu bar, since every QMenu opened from it is its child widget.
+inline QString MenuBarStyle()
+{
+    const Palette& colors = Colors();
+
+    return QStringLiteral(
+        "QMenuBar { background:%1; color:%2; border-bottom:1px solid %3; }"
+        "QMenuBar::item { background:transparent; color:%2; }"
+        "QMenuBar::item:selected { background:%4; color:%5; }"
+        "QMenuBar::item:pressed { background:%6; color:%5; }")
+        .arg(
+            colors.background,
+            colors.text,
+            colors.border,
+            colors.primary,
+            colors.primaryText,
+            colors.primaryHover);
+}
+
+// A drop-down menu, see MenuBarStyle() for why it is styled by hand.
+inline QString MenuStyle()
+{
+    const Palette& colors = Colors();
+
+    return QStringLiteral(
+        "QMenu { background:%1; color:%2; border:1px solid %3; }"
+        "QMenu::item { background:transparent; color:%2; }"
+        "QMenu::item:selected { background:%4; color:%5; }"
+        "QMenu::item:disabled { color:%6; }"
+        "QMenu::separator { height:1px; background:%3; margin:4px 8px; }")
+        .arg(
+            colors.surface,
+            colors.text,
+            colors.border,
+            colors.primary,
+            colors.primaryText,
+            colors.disabledText);
+}
+
 // Plain button, used for secondary actions.
 inline QString NeutralButtonStyle()
 {

@@ -15,7 +15,7 @@ ARM64/
 bin/
 obj/
 out/
-build/
+build*/
 
 # Per-configuration build folders
 [Bb]uild/

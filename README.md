@@ -125,12 +125,13 @@ The choice is remembered between runs.
 
 | View | Shows |
 | --- | --- |
-| **Simple** (default) | The game folder selector and the mod card - everything a player needs to install or update the mod. The window is kept small, because it holds nothing else. |
-| **Advanced** | The same two, plus the log viewer: the log tools, the log file list, the highlighted preview and the compile-error pane. |
+| **Simple** (default) | The game folder selector, the mod card and the mod list row (**Manage mods...**) - everything a player needs to install or update the mod and to choose which mods the game loads. The window is kept small, because it holds nothing else. |
+| **Advanced** | The same three, plus the log viewer: the log tools, the log file list, the highlighted preview and the compile-error pane. |
 
-The folder selector and the mod card are shared, so an install or an update can be
-started from either view, and the log list is not reread from disk while the simple
-view is on screen. Switching to the advanced view refreshes it right away.
+The folder selector, the mod card and the mod list row are shared, so an install,
+an update or a change to the game's mod list can be made from either view, and the
+log list is not reread from disk while the simple view is on screen. Switching to
+the advanced view refreshes it right away.
 
 Each view remembers the window size it had, so switching back and forth does not
 resize a window the user already sized.

@@ -9,7 +9,7 @@
 set -e
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-BUILD_DIR="$ROOT/build"
+BUILD_DIR="$ROOT/build-linux"
 
 if [ ! -f "$BUILD_DIR/CMakeCache.txt" ]; then
     echo "Configuring CMake build tree..."

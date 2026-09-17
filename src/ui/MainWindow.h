@@ -153,7 +153,7 @@ private:
     mods::ModManager* modManager_ = nullptr;
     ModsPanel* modsPanel_ = nullptr;
 
-    // Advanced view only: edits the mod list the game loads.
+    // Edits the mod list the game loads; shared by both views.
     QWidget* modsTools_ = nullptr;
     QPushButton* manageModsButton_ = nullptr;
     QLabel* manageModsHint_ = nullptr;
@@ -179,9 +179,10 @@ private:
     int modifiedColumnWidth_ = 168;
 
     // Window size per view, so switching back does not throw away the size the
-    // user picked for the other one. The simple view only has the folder row and
-    // the mod card, which leaves the log viewer's room to the advanced view.
-    QSize simpleViewSize_{ 1000, 200 };
+    // user picked for the other one. The simple view has the folder row, the mod
+    // card and the mod list row, which leaves the log viewer's room to the
+    // advanced view.
+    QSize simpleViewSize_{ 1000, 248 };
     QSize advancedViewSize_{ 1600, 800 };
 
     QString lastExportPath_;

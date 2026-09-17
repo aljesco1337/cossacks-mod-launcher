@@ -12,7 +12,7 @@ rem    configure.bat ...                              any extra CMake options
 rem ============================================================================
 setlocal EnableDelayedExpansion
 set "ROOT=%~dp0"
-set "BUILD_DIR=%ROOT%build"
+set "BUILD_DIR=%ROOT%build-windows"
 
 rem Detect whether the caller already supplied a Qt location hint.
 set "HAS_QT_HINT="

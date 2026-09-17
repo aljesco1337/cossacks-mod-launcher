@@ -10,7 +10,7 @@
 set -e
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-BUILD_DIR="$ROOT/build"
+BUILD_DIR="$ROOT/build-linux"
 
 found_build_type=0
 for arg in "$@"; do

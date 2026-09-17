@@ -299,8 +299,8 @@ void MainWindow::buildUi()
     modsPanel_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     mainLayout->addWidget(modsPanel_);
 
-    // Mod list editor: only shown in the advanced view, which is where the tools
-    // for looking into the game live.
+    // Mod list editor: shared by both views, so the game's mod list can be
+    // edited without opening the log viewer.
     modsTools_ = new QWidget(central);
 
     auto* modsToolsLayout = new QHBoxLayout(modsTools_);
@@ -667,10 +667,9 @@ void MainWindow::applyViewMode()
 {
     const bool advanced = viewMode_ == ViewMode::Advanced;
 
-    // The folder selector and the mod card are shared by both views; only the
-    // log area and the mod list editor are exclusive to the advanced one.
+    // The folder selector, the mod card and the mod list editor are shared by
+    // both views; only the log area is exclusive to the advanced one.
     logSection_->setVisible(advanced);
-    modsTools_->setVisible(advanced);
     simpleViewSpacer_->setVisible(!advanced);
 
     if (simpleViewAction_)
@@ -685,7 +684,7 @@ void MainWindow::applyViewMode()
 
     updateModToolsState();
 
-    // The simple view holds two rows, so it does not need the room the log
+    // The simple view holds three rows, so it does not need the room the log
     // viewer takes.
     resize(advanced ? advancedViewSize_ : simpleViewSize_);
 }
@@ -716,9 +715,20 @@ void MainWindow::applyTheme()
         darkThemeAction_->setChecked(ui::CurrentThemeMode() == ui::ThemeMode::Dark);
     }
 
-    // Qt's own widgets - menu bar, table headers, scroll bars, dialogs - follow
-    // the application palette.
+    // Qt's own widgets - table headers, scroll bars, dialogs - follow the
+    // application palette.
     qApp->setPalette(ui::ApplicationPalette());
+
+    // The menu bar and its drop-downs are the exception: the native Windows
+    // styles draw them with the system theme, so the palette never reaches them
+    // and the dark theme ends up with pale text on a pale bar. They are styled
+    // by hand here; the menus are children of the bar and inherit its rules.
+    menuBar()->setStyleSheet(ui::MenuBarStyle());
+
+    for (QMenu* menu : menuBar()->findChildren<QMenu*>())
+    {
+        menu->setStyleSheet(ui::MenuStyle());
+    }
 
     // Everything below is styled by hand, so every colour has to be re-applied
     // here; this is the single place that knows how the window looks.

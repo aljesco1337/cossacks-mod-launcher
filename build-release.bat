@@ -8,7 +8,7 @@ rem    build-release.bat --parallel  ...or pass any extra CMake build options
 rem ============================================================================
 setlocal
 set "ROOT=%~dp0"
-set "BUILD_DIR=%ROOT%build"
+set "BUILD_DIR=%ROOT%build-windows"
 
 if not exist "%BUILD_DIR%CMakeCache.txt" (
     echo Configuring CMake build tree...
