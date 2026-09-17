@@ -9,10 +9,44 @@
 #include <QStringList>
 
 #include <algorithm>
+#include <cctype>
 
 namespace mods {
 
 namespace {
+
+// The manifest may publish the digest in the OCI style ("sha256:<hex>"), which is
+// what "sha256sum" output looks like once a prefix is prepended. Only the hex part
+// is ever compared, so the prefix is dropped here, once.
+std::string NormalizeDigest(const std::string& value)
+{
+    std::string digest = value;
+
+    const std::size_t colon = digest.find(':');
+
+    if (colon != std::string::npos && colon + 1 < digest.size())
+    {
+        digest = digest.substr(colon + 1);
+    }
+
+    const std::size_t first = digest.find_first_not_of(" \t\r\n");
+
+    if (first == std::string::npos)
+    {
+        return {};
+    }
+
+    const std::size_t last = digest.find_last_not_of(" \t\r\n");
+    digest = digest.substr(first, last - first + 1);
+
+    std::transform(
+        digest.begin(),
+        digest.end(),
+        digest.begin(),
+        [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+
+    return digest;
+}
 
 // Manifest text members are UTF-8. Numbers are accepted as well, so a manifest
 // that publishes an id as a number does not break the launcher.
@@ -106,7 +140,7 @@ std::optional<core::ModManifest> ParseModManifest(const QByteArray& json, QStrin
         release.versionNumber = entry.value(QStringLiteral("versionNumber")).toInt();
         release.updatedAt = TextMember(entry, "updatedAt");
         release.downloadUrl = TextMember(entry, "downloadUrl");
-        release.sha256 = TextMember(entry, "sha256");
+        release.sha256 = NormalizeDigest(TextMember(entry, "sha256"));
         release.size = static_cast<long long>(entry.value(QStringLiteral("size")).toDouble());
         release.installDir = TextMember(entry, "installDir");
         release.archiveRoot = TextMember(entry, "archiveRoot");

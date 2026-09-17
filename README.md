@@ -248,7 +248,7 @@ https://raw.githubusercontent.com/aljesco1337/cossacks-mod-launcher/distribution
       "versionLabel": "0.33",       // shown to the user
       "versionNumber": 330,          // used to decide whether an update exists
       "downloadUrl": "https://github.com/.../Renaissance_0.33.zip",
-      "sha256": "9725...",          // verified after the download
+      "sha256": "9725...",          // lowercase hex, verified after the download
       "size": 22449167               // verified after the download
 
       // optional, absent in schemaVersion 1:
@@ -264,13 +264,21 @@ Without `installDir` the launcher installs into `mods/<name>`; without
 New versions are compared by `versionNumber`, never by the label, because
 `"0.9"` sorts above `"0.33"` as text.
 
+`sha256` should be the bare lowercase digest. The OCI style with an algorithm
+prefix (`"sha256:9725..."`) is accepted as well and reduced to the digest, so a
+value copied straight from a tool that prints the prefix does not reject a
+perfectly good download.
+
 ### Download and install
 
 1. The manifest is fetched with `If-None-Match`, so a repeated check that finds
    nothing new transfers a few bytes instead of the whole file.
 2. The archive is downloaded into the temporary folder and verified against
    `sha256` and `size` from the manifest. A mismatch is reported and nothing is
-   installed.
+   installed. The reason is shown on the card itself ("The last attempt
+   failed: ..."), not only in the status bar, and the button becomes a retry,
+   so a failed attempt is never mistaken for a state the launcher is just
+   showing.
 3. The archive is unpacked into a staging folder next to the mod folder.
    Entries with an absolute path or `..` are rejected, so a tampered archive
    cannot write outside the game folder.

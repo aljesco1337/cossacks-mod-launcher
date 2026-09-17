@@ -153,7 +153,9 @@ ModInstaller::Result ModInstaller::Install(
 
         if (QString::compare(digest, QString::fromStdString(release.sha256), Qt::CaseInsensitive) != 0)
         {
-            result.error = Tr("the downloaded file does not match the checksum published in the manifest");
+            result.error = Tr("the downloaded file does not match the checksum published in the "
+                              "manifest (expected %1, got %2)")
+                               .arg(QString::fromStdString(release.sha256), digest);
             return result;
         }
     }

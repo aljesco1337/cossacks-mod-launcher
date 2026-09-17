@@ -11,6 +11,7 @@
 #include "core/ModManifest.h"
 #include "mods/ModManager.h"
 
+using ui::kAccentColor;
 using ui::kBorderColor;
 using ui::kMutedColor;
 using ui::kSurfaceColor;
@@ -106,6 +107,15 @@ void ModsPanel::refresh()
 
     statusLabel_->setText(statusText());
 
+    // A failure is shown in the warning colour, so it is not mistaken for the
+    // "an update is available" message it leaves behind.
+    const bool failureVisible = !manager_->lastError().isEmpty() &&
+        manager_->status() != mods::ModManager::Status::Checking &&
+        manager_->status() != mods::ModManager::Status::CheckFailed;
+
+    statusLabel_->setStyleSheet(
+        QStringLiteral("color:%1;").arg(failureVisible ? kAccentColor : kMutedColor));
+
     const QString error = manager_->lastError();
     statusLabel_->setToolTip(error);
     setToolTip(error);
@@ -156,6 +166,17 @@ QString ModsPanel::statusText() const
 
     case mods::ModManager::Stage::None:
         break;
+    }
+
+    // Without this the card would simply keep saying that a version is available,
+    // which looks exactly like the attempt never happened.
+    const QString error = manager_->lastError();
+
+    if (!error.isEmpty() &&
+        manager_->status() != mods::ModManager::Status::Checking &&
+        manager_->status() != mods::ModManager::Status::CheckFailed)
+    {
+        return tr("The last attempt failed: %1").arg(error);
     }
 
     switch (manager_->status())
@@ -231,17 +252,32 @@ QString ModsPanel::actionText() const
     const QString version = Text(release->versionLabel);
     const bool hasVersion = !version.isEmpty();
 
+    // After a failure the same button is the way to try again.
+    const bool retry = !manager_->lastError().isEmpty();
+
     switch (manager_->status())
     {
     case mods::ModManager::Status::UpToDate:
     case mods::ModManager::Status::InstalledUnknown:
-        return tr("Reinstall %1").arg(name);
+        return retry ? tr("Retry reinstalling %1").arg(name) : tr("Reinstall %1").arg(name);
 
     case mods::ModManager::Status::UpdateAvailable:
-        return hasVersion ? tr("Update to version %1").arg(version) : tr("Update %1").arg(name);
+        if (!hasVersion)
+        {
+            return tr("Update %1").arg(name);
+        }
+
+        return retry ? tr("Retry update to version %1").arg(version)
+                     : tr("Update to version %1").arg(version);
 
     case mods::ModManager::Status::NotInstalled:
-        return hasVersion ? tr("Install %1 %2").arg(name, version) : tr("Install %1").arg(name);
+        if (!hasVersion)
+        {
+            return tr("Install %1").arg(name);
+        }
+
+        return retry ? tr("Retry installing %1 %2").arg(name, version)
+                     : tr("Install %1 %2").arg(name, version);
 
     default:
         break;
