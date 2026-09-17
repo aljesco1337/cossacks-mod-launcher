@@ -33,6 +33,12 @@ struct ModsIniEntry
     // "dis = False". An entry without the key counts as disabled, because it
     // never opted in.
     bool enabled = false;
+
+    // Name the game shows for the mod, as far as the record carries it. The game
+    // writes it for the mods it knows about, and it is the only name a workshop
+    // item has in the list - its folder is just the numeric id. Empty when the
+    // record has no "title" line, in which case the mod's own manifest names it.
+    std::string title;
 };
 
 struct ModsIniDocument
@@ -56,6 +62,12 @@ struct ModsIniRecordState
 };
 
 inline constexpr const char* kModsIniFileName = "mods.ini";
+
+// Every mod folder carries its own manifest next to its data - "<mod
+// folder>/mod.ini" - which holds the name the game shows for the mod under the
+// key "title". Not to be confused with kModsIniFileName, the list of mods the
+// game loads.
+inline constexpr const char* kModMetadataFileName = "mod.ini";
 
 // The list stores the inverse of what the flag means: the key is called "dis"
 // (disabled), so switching a mod OFF is written as "dis = True" and switching it
@@ -104,6 +116,27 @@ bool ApplyModsIniStates(
     const std::string& text,
     const std::vector<ModsIniRecordState>& states,
     std::string& updatedText,
+    std::string& error);
+
+// Reads "<modsFolder>/mods.ini" and parses it, so a caller that only wants to look
+// at the list does not have to know how the file is stored. The UTF-8 BOM is
+// accepted and removed; a UTF-16 file is refused, because editing it would corrupt
+// it. A missing file is not an error: "exists" reports it and the document stays
+// empty.
+bool ReadModsIni(
+    const std::filesystem::path& modsFolder,
+    ModsIniDocument& document,
+    bool& exists,
+    std::string& error);
+
+// Reads the name a mod calls itself: the "title" of its own manifest,
+// "<modDirectory>/mod.ini". A folder without a manifest, or a manifest without a
+// title, is not an error - "title" simply stays empty and the caller falls back to
+// the folder name. False only when the manifest exists but cannot be read (see
+// ReadModsIni for the encodings that are refused).
+bool ReadModTitle(
+    const std::filesystem::path& modDirectory,
+    std::string& title,
     std::string& error);
 
 // Reads "<modsFolder>/mods.ini", applies the states and writes the file back once.

@@ -1,6 +1,7 @@
 #include "ModList.h"
 
 #include <algorithm>
+#include <cctype>
 #include <vector>
 
 #include "ModsIni.h"
@@ -47,6 +48,60 @@ std::string NormalizedLeaf(const std::string& dir)
     return slash == std::string::npos ? normalized : normalized.substr(slash + 1);
 }
 
+// The name the "Manage mods" dialog shows for a record. Unlike NormalizedLeaf()
+// the spelling is kept: the user recognizes "Renaissance", not "renaissance".
+std::string DisplayName(const std::string& dir)
+{
+    const std::size_t last = dir.find_last_not_of(" \t\r\n\\/");
+
+    if (last == std::string::npos)
+    {
+        return {};
+    }
+
+    const std::string trimmed = dir.substr(0, last + 1);
+    const std::size_t slash = trimmed.find_last_of("\\/");
+
+    return slash == std::string::npos ? trimmed : trimmed.substr(slash + 1);
+}
+
+// A "dir" value resolved against the game folder. The value uses Windows
+// separators and may climb out of the game folder (a workshop record reads
+// "..\..\workshop\content\<appId>\<id>"), which std::filesystem does not
+// understand as it stands, so the separators are normalized first.
+fs::path ResolveGameRelativeDir(const fs::path& gameDirectory, const std::string& dir)
+{
+    std::string text = dir;
+
+    std::replace(text.begin(), text.end(), '\\', '/');
+
+    return (gameDirectory / Utf8ToPath(text)).lexically_normal();
+}
+
+// The name to show for a mod: the record's own "title" when the list has one, else
+// the "title" of the mod folder's manifest, else the last component of "dir" -
+// which for a workshop item is the far less useful numeric id.
+std::string ModDisplayName(
+    const fs::path& gameDirectory,
+    const std::string& dir,
+    const std::string& recordTitle)
+{
+    if (!recordTitle.empty())
+    {
+        return recordTitle;
+    }
+
+    std::string title;
+    std::string error;
+
+    if (ReadModTitle(ResolveGameRelativeDir(gameDirectory, dir), title, error) && !title.empty())
+    {
+        return title;
+    }
+
+    return DisplayName(dir);
+}
+
 // "value" names the record "dir" when it matches either completely or as its last
 // component (the workshop id, or the folder name).
 bool MatchesMod(const std::string& value, const std::string& dir)
@@ -74,6 +129,64 @@ bool IsCompatible(const ModListOptions& options, const std::string& dir)
     }
 
     return false;
+}
+
+std::string ToLowerAscii(const std::string& value)
+{
+    std::string lowered = value;
+
+    std::transform(
+        lowered.begin(),
+        lowered.end(),
+        lowered.begin(),
+        [](unsigned char character)
+        {
+            return static_cast<char>(std::tolower(character));
+        });
+
+    return lowered;
+}
+
+// True when the list already holds a record for "dir".
+bool ContainsDir(const std::vector<ModListEntry>& entries, const std::string& dir)
+{
+    for (const ModListEntry& entry : entries)
+    {
+        if (SameModsIniDir(entry.dir, dir))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Sub-folders of "<game folder>/mods", written the way mods.ini refers to them
+// ("mods\<name>") and sorted by name. A folder no record mentions is a mod the game
+// does not load yet.
+std::vector<std::string> EnumerateLocalModDirs(const fs::path& gameDirectory)
+{
+    std::vector<std::string> dirs;
+
+    std::error_code ec;
+
+    for (fs::directory_iterator it(gameDirectory / L"mods", ec), end; !ec && it != end; it.increment(ec))
+    {
+        // A separate error_code: touching the loop's own one would stop it.
+        std::error_code entryError;
+
+        if (!it->is_directory(entryError))
+        {
+            // "mods.ini" and anything else that is not a mod folder.
+            continue;
+        }
+
+        dirs.push_back(GameRelativeDir(gameDirectory, it->path()));
+    }
+
+    std::sort(dirs.begin(), dirs.end());
+
+    return dirs;
 }
 
 // "modDirectory" may be empty, which lists the workshop items only.
@@ -153,6 +266,124 @@ bool ListInstalledMod(
     std::string& error)
 {
     return EnsureListed(gameDirectory, modDirectory, options, changed, error);
+}
+
+bool CollectMods(
+    const std::filesystem::path& gameDirectory,
+    std::vector<ModListEntry>& entries,
+    std::string& error)
+{
+    entries.clear();
+    error.clear();
+
+    ModsIniDocument document;
+    bool exists = false;
+
+    if (!ReadModsIni(gameDirectory / L"mods", document, exists, error))
+    {
+        return false;
+    }
+
+    for (const ModsIniEntry& entry : document.entries)
+    {
+        entries.push_back(ModListEntry{
+            entry.dir,
+            ModDisplayName(gameDirectory, entry.dir, entry.title),
+            true,
+            entry.enabled });
+    }
+
+    // Mods that are on disk but not in the list. They are switched off until the
+    // user asks for them, and sorted by name so the dialog stays readable.
+    std::vector<ModListEntry> found;
+
+    const auto consider = [&](const std::string& dir)
+    {
+        if (ContainsDir(entries, dir) || ContainsDir(found, dir))
+        {
+            return;
+        }
+
+        found.push_back(ModListEntry{
+            dir,
+            ModDisplayName(gameDirectory, dir, std::string{}),
+            false,
+            false });
+    };
+
+    for (const std::string& dir : EnumerateLocalModDirs(gameDirectory))
+    {
+        consider(dir);
+    }
+
+    for (const std::string& dir : EnumerateWorkshopModDirs(gameDirectory))
+    {
+        consider(dir);
+    }
+
+    std::stable_sort(
+        found.begin(),
+        found.end(),
+        [](const ModListEntry& left, const ModListEntry& right)
+        {
+            return ToLowerAscii(left.name) < ToLowerAscii(right.name);
+        });
+
+    entries.insert(entries.end(), found.begin(), found.end());
+
+    return true;
+}
+
+bool SetModEnabled(
+    const std::filesystem::path& gameDirectory,
+    const std::string& dir,
+    bool enabled,
+    bool& changed,
+    std::string& error)
+{
+    changed = false;
+    error.clear();
+
+    if (NormalizeModsIniDir(dir).empty())
+    {
+        error = "the mod directory is empty";
+        return false;
+    }
+
+    if (!enabled)
+    {
+        // Switching off a mod the list does not mention: there is nothing to write,
+        // and appending a disabled record would only make the file longer.
+        ModsIniDocument document;
+        bool exists = false;
+
+        if (!ReadModsIni(gameDirectory / L"mods", document, exists, error))
+        {
+            return false;
+        }
+
+        bool listed = false;
+
+        for (const ModsIniEntry& entry : document.entries)
+        {
+            if (SameModsIniDir(entry.dir, dir))
+            {
+                listed = true;
+                break;
+            }
+        }
+
+        if (!listed)
+        {
+            return true;
+        }
+    }
+
+    const std::vector<ModsIniRecordState> states{
+        ModsIniRecordState{ dir, enabled ? ModsIniState::Enabled : ModsIniState::Disabled },
+    };
+
+    return EnsureModsIniStates(gameDirectory / L"mods", states, changed, error);
 }
 
 } // namespace core

@@ -137,6 +137,8 @@ set(CLV_UI_SOURCES
     src/ui/main.cpp
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
+    src/ui/ManageModsDialog.cpp
+    src/ui/ManageModsDialog.h
     src/ui/ModsPanel.cpp
     src/ui/ModsPanel.h
     src/ui/Theme.h

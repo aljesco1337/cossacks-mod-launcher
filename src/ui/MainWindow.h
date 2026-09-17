@@ -64,6 +64,7 @@ private slots:
     void exportLogs();
     void revealLastExport();
     void deleteLogs();
+    void manageMods();
 
 private:
     void buildUi();
@@ -103,6 +104,10 @@ private:
 
     // Keeps the mod manager in sync with the folder chosen above.
     void syncModGameDirectory();
+
+    // The mod list editor needs a usable game folder, so the button follows the
+    // mod card's state.
+    void updateModToolsState();
 
     // Reads "cossacks.ini" and mirrors its logging switches in the checkbox.
     void refreshLogSettings();
@@ -147,6 +152,12 @@ private:
 
     mods::ModManager* modManager_ = nullptr;
     ModsPanel* modsPanel_ = nullptr;
+
+    // Advanced view only: edits the mod list the game loads.
+    QWidget* modsTools_ = nullptr;
+    QPushButton* manageModsButton_ = nullptr;
+    QLabel* manageModsHint_ = nullptr;
+
     QTimer* modCheckTimer_ = nullptr;
     QAction* autoModCheckAction_ = nullptr;
     QLabel* appUpdateLabel_ = nullptr;

@@ -55,4 +55,47 @@ bool ListInstalledMod(
     bool& changed,
     std::string& error);
 
+// One mod the user can switch on or off, as the "Manage mods" dialog shows it.
+struct ModListEntry
+{
+    // Path exactly as mods.ini writes it, i.e. relative to the game folder. It is
+    // also the value used to switch the record.
+    std::string dir;
+
+    // Last component of "dir", used as the display name: "Renaissance" for a mod
+    // folder, the workshop id for a workshop item.
+    std::string name;
+
+    // Whether mods.ini already has a record for this mod. A mod that is only found
+    // on disk is switched off, and gets its record when the user switches it on.
+    bool listed = false;
+
+    // Whether the game loads it, i.e. whether the record's "dis" flag reads False.
+    // A mod without a record counts as switched off.
+    bool enabled = false;
+};
+
+// Everything the user can choose between: the records of mods.ini in the order the
+// file has them, followed by the mod folders inside the game and the workshop items
+// the file does not mention yet, sorted by name.
+//
+// Returns false - with an empty list - when mods.ini exists but cannot be read or
+// parsed (a UTF-16 file, for instance); a list that is not there yet is fine.
+bool CollectMods(
+    const std::filesystem::path& gameDirectory,
+    std::vector<ModListEntry>& entries,
+    std::string& error);
+
+// Switches one mod on or off in "<game folder>/mods/mods.ini".
+//
+// Switching a mod off that the file does not mention yet does nothing: without a
+// record the game does not load it either, and appending a disabled record would
+// only make the list longer. "changed" reports whether the file was written.
+bool SetModEnabled(
+    const std::filesystem::path& gameDirectory,
+    const std::string& dir,
+    bool enabled,
+    bool& changed,
+    std::string& error);
+
 } // namespace core

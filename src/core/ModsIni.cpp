@@ -356,6 +356,39 @@ bool ReadFileBytes(const fs::path& filePath, std::string& bytes, bool& exists, s
     return true;
 }
 
+// Reads the list and splits off a UTF-8 BOM, which has to be written back but must
+// not take part in the parsing. A UTF-16 file is refused: rewriting it as UTF-8
+// would make the game's copy unreadable, and re-encoding it is out of scope.
+bool ReadListText(
+    const fs::path& filePath,
+    std::string& bom,
+    std::string& text,
+    bool& exists,
+    std::string& error)
+{
+    bom.clear();
+    text.clear();
+
+    if (!ReadFileBytes(filePath, text, exists, error))
+    {
+        return false;
+    }
+
+    if (text.rfind("\xEF\xBB\xBF", 0) == 0)
+    {
+        bom = "\xEF\xBB\xBF";
+        text.erase(0, 3);
+    }
+    else if (text.rfind("\xFF\xFE", 0) == 0 || text.rfind("\xFE\xFF", 0) == 0)
+    {
+        error = "the mod list is stored as UTF-16 and was left untouched";
+        text.clear();
+        return false;
+    }
+
+    return true;
+}
+
 } // namespace
 
 std::string NormalizeModsIniDir(const std::string& dir)
@@ -473,6 +506,12 @@ bool ParseModsIni(const std::string& text, ModsIniDocument& document, std::strin
                 if (EqualsIgnoreCase(token.key, "dir"))
                 {
                     entry.dir = token.value;
+                }
+                else if (EqualsIgnoreCase(token.key, "title"))
+                {
+                    // The name the game shows; only used for display, the launcher
+                    // never writes it.
+                    entry.title = token.value;
                 }
                 else if (EqualsIgnoreCase(token.key, "dis"))
                 {
@@ -773,6 +812,67 @@ bool ApplyModsIniStates(
     return true;
 }
 
+bool ReadModsIni(
+    const std::filesystem::path& modsFolder,
+    ModsIniDocument& document,
+    bool& exists,
+    std::string& error)
+{
+    document.entries.clear();
+    exists = false;
+    error.clear();
+
+    std::string bom;
+    std::string text;
+
+    if (!ReadListText(modsFolder / kModsIniFileName, bom, text, exists, error))
+    {
+        return false;
+    }
+
+    return ParseModsIni(text, document, error);
+}
+
+bool ReadModTitle(
+    const std::filesystem::path& modDirectory,
+    std::string& title,
+    std::string& error)
+{
+    title.clear();
+    error.clear();
+
+    std::string bom;
+    std::string text;
+    bool exists = false;
+
+    if (!ReadListText(modDirectory / kModMetadataFileName, bom, text, exists, error))
+    {
+        return false;
+    }
+
+    if (!exists)
+    {
+        // A mod without a manifest keeps whatever name the caller has for it.
+        return true;
+    }
+
+    // The manifest is the game's own "struct" markup as well, and "title" sits in
+    // its top level. Nested blocks (a change note, for instance) come after it and
+    // use other keys, so the first match is the name.
+    for (const std::string& line : SplitLines(text))
+    {
+        const Token token = Tokenize(line);
+
+        if (token.kind == TokenKind::Value && EqualsIgnoreCase(token.key, "title"))
+        {
+            title = token.value;
+            break;
+        }
+    }
+
+    return true;
+}
+
 bool EnsureModsIniStates(
     const std::filesystem::path& modsFolder,
     const std::vector<ModsIniRecordState>& states,
@@ -783,26 +883,12 @@ bool EnsureModsIniStates(
 
     const fs::path filePath = modsFolder / kModsIniFileName;
 
+    std::string bom;
     std::string bytes;
     bool exists = false;
 
-    if (!ReadFileBytes(filePath, bytes, exists, error))
+    if (!ReadListText(filePath, bom, bytes, exists, error))
     {
-        return false;
-    }
-
-    std::string bom;
-
-    if (bytes.rfind("\xEF\xBB\xBF", 0) == 0)
-    {
-        bom = "\xEF\xBB\xBF";
-        bytes.erase(0, 3);
-    }
-    else if (bytes.rfind("\xFF\xFE", 0) == 0 || bytes.rfind("\xFE\xFF", 0) == 0)
-    {
-        // Rewriting UTF-16 as UTF-8 would make the game's copy unreadable, and
-        // re-encoding it is out of scope: report instead of corrupting.
-        error = "the mod list is stored as UTF-16 and was left untouched";
         return false;
     }
 

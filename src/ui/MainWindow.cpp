@@ -53,6 +53,7 @@
 #include <windows.h>
 #endif
 
+#include "ManageModsDialog.h"
 #include "ModsPanel.h"
 #include "Theme.h"
 #include "core/GameDirectory.h"
@@ -298,6 +299,28 @@ void MainWindow::buildUi()
     modsPanel_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     mainLayout->addWidget(modsPanel_);
 
+    // Mod list editor: only shown in the advanced view, which is where the tools
+    // for looking into the game live.
+    modsTools_ = new QWidget(central);
+
+    auto* modsToolsLayout = new QHBoxLayout(modsTools_);
+    modsToolsLayout->setContentsMargins(0, 0, 0, 0);
+    modsToolsLayout->setSpacing(8);
+
+    manageModsButton_ = new QPushButton(tr("Manage mods..."), modsTools_);
+    manageModsButton_->setMinimumHeight(32);
+    manageModsButton_->setToolTip(
+        tr("Switches the mods the game loads on and off in its mods.ini."));
+
+    manageModsHint_ = new QLabel(
+        tr("Choose which mods the game loads; the game picks the change up the next time it starts."),
+        modsTools_);
+
+    modsToolsLayout->addWidget(manageModsButton_);
+    modsToolsLayout->addWidget(manageModsHint_, 1);
+
+    mainLayout->addWidget(modsTools_);
+
     // Log area: only shown in the advanced view.
     logSection_ = new QWidget(central);
     auto* logLayout = new QVBoxLayout(logSection_);
@@ -420,6 +443,7 @@ void MainWindow::buildUi()
     // Connections.
     connect(browseButton_, &QPushButton::clicked, this, &MainWindow::browseGame);
     connect(detectButton_, &QPushButton::clicked, this, &MainWindow::detectGame);
+    connect(manageModsButton_, &QPushButton::clicked, this, &MainWindow::manageMods);
     connect(gameDirCombo_->lineEdit(), &QLineEdit::returnPressed, this, &MainWindow::onGameDirEdited);
     connect(gameDirCombo_, qOverload<int>(&QComboBox::activated), this, [this](int)
     {
@@ -644,8 +668,9 @@ void MainWindow::applyViewMode()
     const bool advanced = viewMode_ == ViewMode::Advanced;
 
     // The folder selector and the mod card are shared by both views; only the
-    // log area is exclusive to the advanced one.
+    // log area and the mod list editor are exclusive to the advanced one.
     logSection_->setVisible(advanced);
+    modsTools_->setVisible(advanced);
     simpleViewSpacer_->setVisible(!advanced);
 
     if (simpleViewAction_)
@@ -657,6 +682,8 @@ void MainWindow::applyViewMode()
     {
         advancedViewAction_->setChecked(advanced);
     }
+
+    updateModToolsState();
 
     // The simple view holds two rows, so it does not need the room the log
     // viewer takes.
@@ -723,6 +750,7 @@ void MainWindow::applyTheme()
     listMetaLabel_->setStyleSheet(mutedStyle);
     contentMetaLabel_->setStyleSheet(mutedStyle);
     logSettingsStatus_->setStyleSheet(mutedStyle);
+    manageModsHint_->setStyleSheet(mutedStyle);
 
     exportResultLabel_->setStyleSheet(QStringLiteral("color:%1;").arg(colors.text));
 
@@ -741,6 +769,7 @@ void MainWindow::applyTheme()
     revealExportButton_->setStyleSheet(ui::NeutralButtonStyle());
     exportButton_->setStyleSheet(ui::NeutralButtonStyle());
     deleteLogsButton_->setStyleSheet(ui::DangerButtonStyle());
+    manageModsButton_->setStyleSheet(ui::NeutralButtonStyle());
 
     modsPanel_->applyTheme();
 
@@ -1507,6 +1536,8 @@ void MainWindow::syncModGameDirectory()
 {
     modManager_->SetGameDirectory(gameDirCombo_->currentText().trimmed());
 
+    updateModToolsState();
+
     // The first time a usable folder is known there is nothing to compare
     // against yet, so look for the manifest right away instead of leaving the
     // panel waiting for the next scheduled check.
@@ -1515,6 +1546,49 @@ void MainWindow::syncModGameDirectory()
     {
         modManager_->CheckForUpdates(false);
     }
+}
+
+void MainWindow::updateModToolsState()
+{
+    if (manageModsButton_ == nullptr)
+    {
+        return;
+    }
+
+    // The same rule the mod card uses: without a usable folder there is no mod
+    // list to edit (ModManager::hasGameFolder() validates the folder).
+    manageModsButton_->setEnabled(modManager_->hasGameFolder());
+}
+
+void MainWindow::manageMods()
+{
+    const QString gameDirectory = gameDirCombo_->currentText().trimmed();
+
+    if (!modManager_->hasGameFolder() || !core::IsValidGameDirectory(toWide(gameDirectory)))
+    {
+        QMessageBox::warning(
+            this,
+            tr("No game folder"),
+            tr("Select a valid Cossacks 3 folder before editing its mod list."));
+        return;
+    }
+
+    // The dialog writes every switch straight to mods.ini, so there is nothing to
+    // confirm when it closes - only something to report.
+    ManageModsDialog dialog(gameDirectory, this);
+    dialog.exec();
+
+    if (dialog.changeCount() == 0)
+    {
+        return;
+    }
+
+    statusBar()->showMessage(
+        tr("mods.ini updated: %1 change%2. The game has to be started again for them to "
+           "take effect.")
+            .arg(dialog.changeCount())
+            .arg(dialog.changeCount() == 1 ? QStringLiteral("") : QStringLiteral("s")),
+        kNotificationTimeoutMs);
 }
 
 QString MainWindow::cossacksIniPath() const
