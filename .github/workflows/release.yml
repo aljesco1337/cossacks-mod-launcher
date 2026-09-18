@@ -11,11 +11,11 @@ permissions:
 
 env:
   QT_VERSION: 6.8.3
-  QT_STATIC_DIR: C:\Qt\6.8.3-static
+  QT_STATIC_DIR: C:\Qt\6.8.3-static-x86
 
 jobs:
   build-windows-static:
-    name: Build Windows static
+    name: Build Windows static x86
     runs-on: windows-2022
 
     steps:
@@ -24,7 +24,7 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
-          arch: x64
+          arch: x86
 
       # Qt takes a long time to build from source, so cache the installed static kit.
       - name: Cache static Qt
@@ -32,7 +32,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.QT_STATIC_DIR }}
-          key: qt-${{ env.QT_VERSION }}-static-msvc2022-v1
+          key: qt-${{ env.QT_VERSION }}-static-msvc2022-x86-v1
 
       - name: Download Qt sources
         if: steps.qt-cache.outputs.cache-hit != 'true'
@@ -111,14 +111,14 @@ jobs:
 
           Compress-Archive `
             -Path dist\CossacksLogViewer.exe `
-            -DestinationPath dist\CossacksLogViewer-Windows-x64-static.zip `
+            -DestinationPath dist\CossacksLogViewer-Windows-x86.zip `
             -Force
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CossacksLogViewer-Windows-x64-static
-          path: dist/CossacksLogViewer-Windows-x64-static.zip
+          name: CossacksLogViewer-Windows-x86
+          path: dist/CossacksLogViewer-Windows-x86.zip
           if-no-files-found: error
 
   build-linux:
