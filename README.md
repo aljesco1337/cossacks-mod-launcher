@@ -56,7 +56,7 @@ configure.bat
 build-release.bat
 ```
 
-- `configure.bat` generates the build tree into `.\build` and automatically
+- `configure.bat` generates the build tree into `.\build-windows` and automatically
   detects Qt under `C:\Qt`. If it can't find Qt, point at the kit explicitly:
   ```bat
   configure.bat -DCMAKE_PREFIX_PATH=C:\Qt\6.11.2\msvc2022_64
@@ -74,11 +74,11 @@ build-release.bat
 ./build-release.sh
 ```
 
-- `./configure.sh` generates the build tree into `./build` (Release by default).
+- `./configure.sh` generates the build tree into `./build-linux` (Release by default).
 - `./build-release.sh` configures (if needed) and builds.
 - The binary is produced at:
   ```text
-  build/CossacksLogViewer
+  build-linux/CossacksLogViewer
   ```
 
 ### Manual CMake
@@ -97,6 +97,27 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH=C:\Qt\6.11.2\msvc2022_64
 cmake --build build --config Release
 ```
 
+### Build kinds
+
+There are two CMake build kinds:
+
+- `dynamic` is the default and keeps the current behavior. Windows builds link
+  the shared Qt runtime and run `windeployqt` after linking.
+- `static` expects `CMAKE_PREFIX_PATH` to point at a static Qt kit. On MSVC it
+  also switches the launcher to the static runtime (`/MT`) and skips
+  `windeployqt`.
+
+```bat
+:: Dynamic / default
+cmake -S . -B build-dynamic -DCMAKE_PREFIX_PATH=C:\Qt\6.11.2\msvc2022_64
+cmake --build build-dynamic --config Release
+
+:: Static
+cmake -S . -B build-static -G Ninja -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_PREFIX_PATH=C:\Qt\6.8.3-static -DCLV_BUILD_KIND=static
+cmake --build build-static
+```
+
 ---
 
 ## How to run
@@ -108,13 +129,14 @@ build\Release\CossacksLogViewer.exe
 
 ```bash
 # Linux
-./build/CossacksLogViewer
+./build-linux/CossacksLogViewer
 ```
 
-On **Windows**, the build automatically runs `windeployqt` after linking, copying
-only the necessary Qt DLLs and plugins (`Qt6Core`, `Qt6Gui`, `Qt6Widgets`,
-`platforms\qwindows.dll`, `styles\qwindowsvistastyle.dll`) next to the executable,
-so it runs without Qt's `bin` directory on `PATH`.
+On **Windows dynamic builds**, the build automatically runs `windeployqt` after
+linking, copying only the necessary Qt DLLs and plugins (`Qt6Core`, `Qt6Gui`,
+`Qt6Widgets`, `platforms\qwindows.dll`, `styles\qwindowsvistastyle.dll`) next to
+the executable, so it runs without Qt's `bin` directory on `PATH`. Static builds
+do not deploy Qt DLLs.
 
 ---
 

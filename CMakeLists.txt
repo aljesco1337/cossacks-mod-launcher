@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
 
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+
 # C is required for the vendored miniz ZIP reader.
 project(CossacksLogViewer VERSION 0.1 LANGUAGES C CXX)
 
@@ -17,6 +21,35 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
+
+set(CLV_BUILD_KIND "dynamic" CACHE STRING
+    "Build kind: dynamic uses shared Qt runtime deployment; static uses a static Qt kit and static MSVC runtime.")
+set_property(CACHE CLV_BUILD_KIND PROPERTY STRINGS dynamic static)
+string(TOLOWER "${CLV_BUILD_KIND}" CLV_BUILD_KIND)
+
+if(NOT CLV_BUILD_KIND STREQUAL "dynamic" AND NOT CLV_BUILD_KIND STREQUAL "static")
+    message(FATAL_ERROR
+        "Unsupported CLV_BUILD_KIND='${CLV_BUILD_KIND}'. "
+        "Use 'dynamic' or 'static'.")
+endif()
+
+set(CLV_BUILD_KIND "${CLV_BUILD_KIND}" CACHE STRING
+    "Build kind: dynamic uses shared Qt runtime deployment; static uses a static Qt kit and static MSVC runtime."
+    FORCE)
+
+set(CLV_STATIC_BUILD OFF)
+if(CLV_BUILD_KIND STREQUAL "static")
+    set(CLV_STATIC_BUILD ON)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries." FORCE)
+
+    if(MSVC)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>" CACHE STRING
+            "MSVC runtime library for static launcher builds."
+            FORCE)
+    endif()
+endif()
+
+message(STATUS "CossacksLogViewer build kind: ${CLV_BUILD_KIND}")
 
 # ---------------------------------------------------------------------------
 # Vendored ZIP reader (miniz, MIT - see src/third_party/miniz/LICENSE)
@@ -93,6 +126,26 @@ if(Qt6_FOUND)
 else()
     set(CLV_QT_TARGET Qt5::Widgets Qt5::Network)
     set(CLV_QT_MAJOR 5)
+endif()
+
+if(CLV_STATIC_BUILD)
+    set(_clv_qt_core_target Qt${CLV_QT_MAJOR}::Core)
+
+    if(TARGET ${_clv_qt_core_target})
+        get_target_property(_clv_qt_core_type ${_clv_qt_core_target} TYPE)
+
+        if(_clv_qt_core_type STREQUAL "SHARED_LIBRARY")
+            message(FATAL_ERROR
+                "CLV_BUILD_KIND=static requires a static Qt kit, but "
+                "${_clv_qt_core_target} is shared. Pass CMAKE_PREFIX_PATH to "
+                "a static Qt installation.")
+        elseif(NOT _clv_qt_core_type STREQUAL "STATIC_LIBRARY")
+            message(WARNING
+                "CLV_BUILD_KIND=static is enabled, but CMake could not verify "
+                "that ${_clv_qt_core_target} is static (target type: "
+                "${_clv_qt_core_type}).")
+        endif()
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -177,43 +230,66 @@ target_link_libraries(CossacksLogViewer
         ${CLV_QT_TARGET}
 )
 
+if(CLV_STATIC_BUILD)
+    if(COMMAND qt_import_plugins)
+        qt_import_plugins(CossacksLogViewer
+            EXCLUDE_BY_TYPE imageformats
+            EXCLUDE_BY_TYPE iconengines
+        )
+    elseif(CLV_QT_MAJOR EQUAL 6 AND COMMAND qt6_import_plugins)
+        qt6_import_plugins(CossacksLogViewer
+            EXCLUDE_BY_TYPE imageformats
+            EXCLUDE_BY_TYPE iconengines
+        )
+    elseif(CLV_QT_MAJOR EQUAL 5 AND COMMAND qt5_import_plugins)
+        qt5_import_plugins(CossacksLogViewer
+            EXCLUDE_BY_TYPE imageformats
+            EXCLUDE_BY_TYPE iconengines
+        )
+    endif()
+endif()
+
 if(WIN32)
     # Registry access for Steam/GOG game detection.
     target_link_libraries(CossacksLogViewer PRIVATE advapi32)
     target_compile_definitions(CossacksLogViewer PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 
-    # Copy the required Qt DLLs and plugins next to the executable after
-    # linking, so the app can run without the Qt "bin" directory on PATH.
-    if(CLV_QT_MAJOR EQUAL 6)
-        set(_clv_qmake_target Qt6::qmake)
+    if(CLV_STATIC_BUILD)
+        message(STATUS "Static build requested; skipping windeployqt.")
     else()
-        set(_clv_qmake_target Qt5::qmake)
-    endif()
+        # Copy the required Qt DLLs and plugins next to the executable after
+        # linking, so the app can run without the Qt "bin" directory on PATH.
+        if(CLV_QT_MAJOR EQUAL 6)
+            set(_clv_qmake_target Qt6::qmake)
+        else()
+            set(_clv_qmake_target Qt5::qmake)
+        endif()
 
-    if(TARGET ${_clv_qmake_target})
-        get_target_property(_clv_qmake_location ${_clv_qmake_target} IMPORTED_LOCATION)
-        get_filename_component(_clv_qt_bin_dir "${_clv_qmake_location}" DIRECTORY)
+        if(TARGET ${_clv_qmake_target})
+            get_target_property(_clv_qmake_location ${_clv_qmake_target} IMPORTED_LOCATION)
+            get_filename_component(_clv_qt_bin_dir "${_clv_qmake_location}" DIRECTORY)
 
-        find_program(CLV_WINDEPLOYQT_EXECUTABLE
-            NAMES windeployqt
-            HINTS "${_clv_qt_bin_dir}"
-        )
-    endif()
+            find_program(CLV_WINDEPLOYQT_EXECUTABLE
+                NAMES windeployqt
+                HINTS "${_clv_qt_bin_dir}"
+            )
+        endif()
 
-    if(CLV_WINDEPLOYQT_EXECUTABLE)
-        add_custom_command(TARGET CossacksLogViewer POST_BUILD
-            COMMAND "${CLV_WINDEPLOYQT_EXECUTABLE}"
-                    --no-translations
-                    --no-compiler-runtime
-                    --skip-plugin-types=imageformats,iconengines
-                    "$<TARGET_FILE:CossacksLogViewer>"
-            VERBATIM
-            COMMENT "Deploying Qt runtime dependencies (windeployqt)..."
-        )
-    else()
-        message(WARNING
-            "windeployqt was not found; the executable will need the Qt 'bin' "
-            "directory on PATH in order to run.")
+        if(CLV_WINDEPLOYQT_EXECUTABLE)
+            add_custom_command(TARGET CossacksLogViewer POST_BUILD
+                COMMAND "${CLV_WINDEPLOYQT_EXECUTABLE}"
+                        --no-translations
+                        --no-compiler-runtime
+                        --skip-plugin-types=imageformats,iconengines
+                        "$<TARGET_FILE:CossacksLogViewer>"
+                VERBATIM
+                COMMENT "Deploying Qt runtime dependencies (windeployqt)..."
+            )
+        else()
+            message(WARNING
+                "windeployqt was not found; the executable will need the Qt 'bin' "
+                "directory on PATH in order to run.")
+        endif()
     endif()
 endif()
 

@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: 6.8.3
+  QT_STATIC_DIR: C:\Qt\6.8.3-static-x86
+
+jobs:
+  build-windows-static:
+    name: Build Windows static x86
+    runs-on: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+
+      # Qt takes a long time to build from source, so cache the installed static kit.
+      - name: Cache static Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.QT_STATIC_DIR }}
+          key: qt-${{ env.QT_VERSION }}-static-msvc2022-x86-v1
+
+      - name: Download Qt sources
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            "https://download.qt.io/archive/qt/6.8/${{ env.QT_VERSION }}/submodules/qtbase-everywhere-src-${{ env.QT_VERSION }}.zip" `
+            -OutFile qtbase.zip
+
+          Expand-Archive qtbase.zip -DestinationPath qt-src
+
+      - name: Build static Qt
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force qt-build | Out-Null
+          Set-Location qt-build
+
+          & "$env:GITHUB_WORKSPACE\qt-src\qtbase-everywhere-src-$env:QT_VERSION\configure.bat" `
+            -prefix "$env:QT_STATIC_DIR" `
+            -release `
+            -static `
+            -static-runtime `
+            -opensource `
+            -confirm-license `
+            -optimize-size `
+            -nomake examples `
+            -nomake tests `
+            -no-openssl `
+            -cmake-generator Ninja
+
+          cmake --build . --parallel 2
+          cmake --install .
+
+      - name: Configure application
+        shell: pwsh
+        run: |
+          $cmakeArgs = @(
+            "-S", ".",
+            "-B", "build-static",
+            "-G", "Ninja",
+            "-DCMAKE_BUILD_TYPE=Release",
+            "-DCLV_BUILD_KIND=static"
+          )
+
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
+            $appVersion = $env:GITHUB_REF_NAME.Substring(1)
+            $cmakeArgs += "-DCLV_APP_VERSION=$appVersion"
+          }
+
+          & "$env:QT_STATIC_DIR\bin\qt-cmake.bat" @cmakeArgs
+
+      - name: Build application
+        run: cmake --build build-static --parallel 2
+
+      - name: Prepare artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          $exe = Get-ChildItem build-static -Recurse -Filter CossacksLogViewer.exe |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "CossacksLogViewer.exe not found"
+          }
+
+          Copy-Item $exe.FullName dist\CossacksLogViewer.exe
+
+          $dependencies = dumpbin /DEPENDENTS dist\CossacksLogViewer.exe | Out-String
+          $dependencies
+
+          if ($dependencies -match 'Qt[56].*\.dll|VCRUNTIME|MSVCP') {
+            throw "Static artifact still depends on Qt or MSVC runtime DLLs."
+          }
+
+          Compress-Archive `
+            -Path dist\CossacksLogViewer.exe `
+            -DestinationPath dist\CossacksLogViewer-Windows-x86.zip `
+            -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CossacksLogViewer-Windows-x86
+          path: dist/CossacksLogViewer-Windows-x86.zip
+          if-no-files-found: error
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build qt6-base-dev
+
+      - name: Configure application
+        run: |
+          cmake_args=(
+            -S .
+            -B build-linux
+            -G Ninja
+            -DCMAKE_BUILD_TYPE=Release
+            -DCLV_BUILD_KIND=dynamic
+          )
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == v* ]]; then
+            cmake_args+=("-DCLV_APP_VERSION=${GITHUB_REF_NAME#v}")
+          fi
+
+          cmake "${cmake_args[@]}"
+
+      - name: Build application
+        run: cmake --build build-linux --parallel 2
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          cp build-linux/CossacksLogViewer dist/CossacksLogViewer
+          chmod +x dist/CossacksLogViewer
+          ldd dist/CossacksLogViewer
+          tar -C dist -czf dist/CossacksLogViewer-Linux-x64.tar.gz CossacksLogViewer
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CossacksLogViewer-Linux-x64
+          path: dist/CossacksLogViewer-Linux-x64.tar.gz
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs:
+      - build-windows-static
+      - build-linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Show release assets
+        run: ls -la release-assets
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              --latest \
+              --verify-tag
+          fi
