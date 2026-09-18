@@ -133,6 +133,22 @@ bool SwapModsIniRecords(
     std::string& updatedText,
     std::string& error);
 
+// Lists "dir" in the "mods" struct directly before or after the record of
+// "anchorDir", switched off.
+//
+// This is how a mod the list does not have yet is given a place in the order
+// without making the game load it: the record is created disabled, and the user can
+// still switch it on when the game should load it. "anchorDir" has to have a record;
+// a "dir" that is already listed is left where it is. "updatedText" stays empty when
+// nothing had to change.
+bool InsertModsIniRecord(
+    const std::string& text,
+    const std::string& dir,
+    const std::string& anchorDir,
+    bool before,
+    std::string& updatedText,
+    std::string& error);
+
 // Reads "<modsFolder>/mods.ini" and parses it, so a caller that only wants to look
 // at the list does not have to know how the file is stored. The UTF-8 BOM is
 // accepted and removed; a UTF-16 file is refused, because editing it would corrupt
@@ -163,16 +179,21 @@ bool EnsureModsIniStates(
     bool& changed,
     std::string& error);
 
-// Reads "<modsFolder>/mods.ini", moves the record and writes the file back once.
+// Reads "<modsFolder>/mods.ini" and puts the record of "dir" directly before
+// ("dirFirst") or directly after the record of "otherDir", writing the file back
+// once.
 //
-// A record the file does not have yet has no place to move to, so it is listed
-// first - switched on, the record switching it on by hand would add - and the move
-// then places it. Nothing is written when the record is already where it should be.
-// "changed" reports whether the file was modified.
-bool MoveModsIniRecord(
+// Both records end up in the list: the one the file does not have yet is inserted
+// switched off, so a mod that was only found on disk can take the place the user
+// gave it without starting to load. When both are listed they trade places, so the
+// caller passes two records that sit next to each other. Nothing is written when the
+// order already is the requested one. "changed" reports whether the file was
+// modified - a mod that had to be listed counts as a change as well.
+bool EnsureModsIniOrder(
     const std::filesystem::path& modsFolder,
     const std::string& dir,
-    bool moveUp,
+    const std::string& otherDir,
+    bool dirFirst,
     bool& changed,
     std::string& error);
 

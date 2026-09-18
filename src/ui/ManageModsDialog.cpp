@@ -32,16 +32,33 @@ QString Text(const std::string& value)
     return QString::fromUtf8(value.data(), static_cast<int>(value.size()));
 }
 
-// The tooltip of both items of a row. A mod without a record moves the way it does
-// because a move lists it first (see moveSelected()).
+// The tooltip of both items of a row.
 QString RowTooltip(const QString& dir, bool listed)
 {
     return listed
         ? ManageModsDialog::tr("%1\nListed in mods.ini.").arg(dir)
         : ManageModsDialog::tr(
-              "%1\nNot in mods.ini yet. Switching it on adds it, and moving it "
-              "adds its record switched on.")
+              "%1\nNot in mods.ini yet. Switching it on adds its record at the end of "
+              "the list; moving it adds it switched off, in the place it stands.")
               .arg(dir);
+}
+
+// How many rows mods.ini has a record for.
+int ListedRowCount(QTableWidget* table)
+{
+    int count = 0;
+
+    for (int row = 0; row < table->rowCount(); row++)
+    {
+        const QTableWidgetItem* item = table->item(row, 0);
+
+        if (item != nullptr && item->data(kListedRole).toBool())
+        {
+            count++;
+        }
+    }
+
+    return count;
 }
 
 } // namespace
@@ -62,7 +79,8 @@ ManageModsDialog::ManageModsDialog(const QString& gameDirectory, QWidget* parent
         tr("Every mod the game can load. A switch is written to the file below straight "
            "away, and the game picks it up the next time it starts. The order of the "
            "list is the order mods.ini keeps the mods in: select a mod and move it up "
-           "or down."),
+           "or down. A mod the list does not have yet is added switched off when a "
+           "move gives it a place."),
         this);
     hintLabel_->setWordWrap(true);
     layout->addWidget(hintLabel_);
@@ -298,23 +316,17 @@ void ManageModsDialog::onItemChanged(QTableWidgetItem* item)
 
     changeCount_++;
 
-    // Switching a mod on appends its record at the end of the list, so the row is
-    // one the move buttons can act on now. Blocked around the writes, or setting
-    // the data would run this handler again.
-    if (enabled)
+    if (enabled && !item->data(kListedRole).toBool())
     {
-        const QSignalBlocker blocker(table_);
-
-        item->setData(kListedRole, true);
-        item->setToolTip(RowTooltip(dir, true));
-
-        if (QTableWidgetItem* dirItem = table_->item(item->row(), 1))
-        {
-            dirItem->setToolTip(RowTooltip(dir, true));
-        }
+        // Switching a mod on appends its record at the end of the list, which is where
+        // the order now has it: read the file back, so the rows the move buttons act on
+        // show the place the mod really took.
+        reload(dir);
     }
-
-    updateMoveButtons();
+    else
+    {
+        updateMoveButtons();
+    }
 
     showStatus(
         tr("%1 is switched %2. Saved to mods.ini.")
@@ -341,6 +353,9 @@ void ManageModsDialog::moveSelected(bool moveUp)
     const QString dir = item->data(kDirRole).toString();
     const QString name = item->text();
 
+    // A move can list the rows it trades with, which is worth reporting.
+    const int listedBefore = ListedRowCount(table_);
+
     bool changed = false;
     std::string error;
 
@@ -365,13 +380,33 @@ void ManageModsDialog::moveSelected(bool moveUp)
 
     changeCount_++;
 
-    // Read the file back: the new order, the switch of a mod that had to be listed
-    // first and the row the buttons act on then all agree with it.
+    // Read the file back: the new order and the row the buttons act on then agree with
+    // it, and a mod the move had to list is shown by its new record.
     reload(dir);
 
-    showStatus(
-        tr("%1 moved %2. Saved to mods.ini.").arg(name, moveUp ? tr("up") : tr("down")),
-        false);
+    const int listed = ListedRowCount(table_) - listedBefore;
+
+    if (listed == 1)
+    {
+        showStatus(
+            tr("%1 moved %2. One more mod was listed switched off, so it keeps its place.")
+                .arg(name, moveUp ? tr("up") : tr("down")),
+            false);
+    }
+    else if (listed > 1)
+    {
+        showStatus(
+            tr("%1 moved %2. %3 more mods were listed switched off, so they keep their place.")
+                .arg(name, moveUp ? tr("up") : tr("down"))
+                .arg(listed),
+            false);
+    }
+    else
+    {
+        showStatus(
+            tr("%1 moved %2. Saved to mods.ini.").arg(name, moveUp ? tr("up") : tr("down")),
+            false);
+    }
 }
 
 void ManageModsDialog::selectRow(const QString& dir)
@@ -395,49 +430,11 @@ void ManageModsDialog::selectRow(const QString& dir)
 void ManageModsDialog::updateMoveButtons()
 {
     const int row = table_->currentRow();
-    const QTableWidgetItem* item = row < 0 ? nullptr : table_->item(row, 0);
 
-    bool up = false;
-    bool down = false;
-
-    if (item != nullptr)
-    {
-        if (!item->data(kListedRole).toBool())
-        {
-            // Not in mods.ini yet: a move lists the mod first (switched on) and
-            // then places the new record, so both directions have somewhere to go.
-            up = true;
-            down = true;
-        }
-        else
-        {
-            // The records of mods.ini come first and in file order, so the first
-            // and the last row carrying a record are the ends of the list.
-            int first = -1;
-            int last = -1;
-
-            for (int index = 0; index < table_->rowCount(); index++)
-            {
-                const QTableWidgetItem* candidate = table_->item(index, 0);
-
-                if (candidate != nullptr && candidate->data(kListedRole).toBool())
-                {
-                    if (first < 0)
-                    {
-                        first = index;
-                    }
-
-                    last = index;
-                }
-            }
-
-            up = row > first;
-            down = row < last;
-        }
-    }
-
-    moveUpButton_->setEnabled(up);
-    moveDownButton_->setEnabled(down);
+    // Every row but the first and the last has a neighbour to trade places with: a
+    // move lists a mod the file does not have yet, so it has a place to move to.
+    moveUpButton_->setEnabled(row > 0);
+    moveDownButton_->setEnabled(row >= 0 && row < table_->rowCount() - 1);
 }
 
 void ManageModsDialog::showStatus(const QString& message, bool failure)

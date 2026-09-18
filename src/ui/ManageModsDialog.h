@@ -17,11 +17,10 @@ class QTableWidgetItem;
 // write that fails is reported in the dialog and the box goes back to where it
 // was, because the file was left untouched.
 //
-// The order of the list is part of the file as well, so the selected record can be
-// moved one place up or down (core::MoveMod); that too is written straight away. A
-// mod the file does not list yet is given its record - switched on, the same record
-// the checkbox writes - by the move, because a record the file does not have has no
-// place to move to.
+// The order of the list is part of the file as well, so the selected row can be
+// moved one place up or down (core::MoveMod); that too is written straight away. The
+// list the dialog shows is the order it writes: a mod the file does not have yet is
+// listed, switched off, as soon as a move gives it a place next to a record.
 class ManageModsDialog : public QDialog
 {
     Q_OBJECT
@@ -42,8 +41,8 @@ private:
     // Fills the table from mods.ini and the folders next to it. Returns false when
     // the list cannot be read (a UTF-16 mods.ini, for instance).
     //
-    // "selectDir" is the record to leave selected afterwards - the one that was
-    // just moved - so the buttons stay on it.
+    // "selectDir" is the record to leave selected afterwards - the one the write just
+    // touched - so the buttons stay on it.
     bool reload(const QString& selectDir = QString());
 
     void onItemChanged(QTableWidgetItem* item);

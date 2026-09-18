@@ -953,6 +953,92 @@ bool SwapModsIniRecords(
     return true;
 }
 
+bool InsertModsIniRecord(
+    const std::string& text,
+    const std::string& dir,
+    const std::string& anchorDir,
+    bool before,
+    std::string& updatedText,
+    std::string& error)
+{
+    updatedText.clear();
+    error.clear();
+
+    const std::string record = Trim(dir);
+
+    if (record.empty())
+    {
+        error = "the mod directory is empty";
+        return false;
+    }
+
+    ModsIniDocument document;
+
+    if (!ParseModsIni(text, document, error))
+    {
+        return false;
+    }
+
+    for (const ModsIniEntry& entry : document.entries)
+    {
+        if (SameModsIniDir(entry.dir, record))
+        {
+            // Already listed, and the caller wants it beside the anchor: where it is
+            // now is the order that was asked for, so there is nothing to insert.
+            return true;
+        }
+    }
+
+    std::vector<std::string> lines = SplitLines(text);
+    std::vector<Element> elements;
+
+    if (!FindElements(lines, elements, error))
+    {
+        return false;
+    }
+
+    std::size_t anchor = kNotFound;
+
+    for (std::size_t index = 0; index < elements.size(); index++)
+    {
+        if (SameModsIniDir(elements[index].dir, anchorDir))
+        {
+            anchor = index;
+            break;
+        }
+    }
+
+    if (anchor == kNotFound)
+    {
+        error = "the record this one should be placed next to is not in the mod list";
+        return false;
+    }
+
+    // The new record is switched off: it is here to hold a place in the order, not
+    // because the user asked for the game to load it. It follows the indentation
+    // already in use, so hand edits stay tidy.
+    const Element& element = elements[anchor];
+
+    const std::string elementIndent = IndentationOf(lines[element.beginLine]);
+    const std::string keyIndent = element.dirLine != kNotFound
+        ? IndentationOf(lines[element.dirLine])
+        : elementIndent + "   ";
+
+    const std::vector<std::string> block = {
+        elementIndent + "[*] : struct.begin",
+        keyIndent + "dir = " + record,
+        keyIndent + "dis = " + ModsIniFlagFor(false),
+        elementIndent + "struct.end",
+    };
+
+    const std::size_t at = before ? element.beginLine : element.endLine + 1;
+
+    lines.insert(lines.begin() + static_cast<std::ptrdiff_t>(at), block.begin(), block.end());
+
+    updatedText = JoinLines(lines, DetectLineEnding(text));
+    return true;
+}
+
 bool ReadModsIni(
     const std::filesystem::path& modsFolder,
     ModsIniDocument& document,
@@ -1055,18 +1141,20 @@ bool EnsureModsIniStates(
     return true;
 }
 
-bool MoveModsIniRecord(
+bool EnsureModsIniOrder(
     const std::filesystem::path& modsFolder,
     const std::string& dir,
-    bool moveUp,
+    const std::string& otherDir,
+    bool dirFirst,
     bool& changed,
     std::string& error)
 {
     changed = false;
 
-    const std::string target = Trim(dir);
+    const std::string first = Trim(dir);
+    const std::string second = Trim(otherDir);
 
-    if (NormalizeModsIniDir(target).empty())
+    if (NormalizeModsIniDir(first).empty() || NormalizeModsIniDir(second).empty())
     {
         error = "the mod directory is empty";
         return false;
@@ -1083,9 +1171,6 @@ bool MoveModsIniRecord(
         return false;
     }
 
-    // A record the file does not have yet has no place to move to, so it is listed
-    // the way switching the mod on lists it - switched on, at the end - and the move
-    // then carries it to where the user asked for.
     ModsIniDocument document;
 
     if (!ParseModsIni(bytes, document, error))
@@ -1093,66 +1178,76 @@ bool MoveModsIniRecord(
         return false;
     }
 
-    bool listed = false;
+    std::size_t firstIndex = kNotFound;
+    std::size_t secondIndex = kNotFound;
 
-    for (const ModsIniEntry& entry : document.entries)
+    for (std::size_t index = 0; index < document.entries.size(); index++)
     {
-        if (SameModsIniDir(entry.dir, target))
+        if (firstIndex == kNotFound && SameModsIniDir(document.entries[index].dir, first))
         {
-            listed = true;
-            break;
+            firstIndex = index;
+        }
+
+        if (secondIndex == kNotFound && SameModsIniDir(document.entries[index].dir, second))
+        {
+            secondIndex = index;
         }
     }
 
-    std::string current = bytes;
+    std::string updated;
 
-    // Whether the text the editor produced differs from the file, i.e. whether
-    // something has to be written at all.
-    bool updated = false;
-
-    if (!listed)
+    if (firstIndex != kNotFound && secondIndex != kNotFound)
     {
-        std::string added;
+        const bool inPlace = dirFirst
+            ? firstIndex + 1 == secondIndex
+            : secondIndex + 1 == firstIndex;
 
-        if (!ApplyModsIniStates(
-                current,
-                { ModsIniRecordState{ target, ModsIniState::Enabled } },
-                added,
-                error))
+        if (inPlace)
         {
+            return true;
+        }
+
+        if (firstIndex + 1 != secondIndex && secondIndex + 1 != firstIndex)
+        {
+            error = "the two records are not next to each other in the mod list";
             return false;
         }
 
-        if (!added.empty())
+        // They sit next to each other the wrong way round, so they trade places.
+        if (!SwapModsIniRecords(bytes, first, dirFirst, updated, error))
         {
-            current = std::move(added);
-            updated = true;
+            return false;
+        }
+    }
+    else if (firstIndex == kNotFound && secondIndex == kNotFound)
+    {
+        error = "neither mod is in the mod list";
+        return false;
+    }
+    else
+    {
+        // Only one of the two has a record: that one is where the other has to be
+        // listed, switched off, so the order the caller asked for can be stored.
+        const bool missingIsFirst = firstIndex == kNotFound;
+
+        const std::string& missing = missingIsFirst ? first : second;
+        const std::string& anchor = missingIsFirst ? second : first;
+        const bool missingBefore = missingIsFirst ? dirFirst : !dirFirst;
+
+        if (!InsertModsIniRecord(bytes, missing, anchor, missingBefore, updated, error))
+        {
+            return false;
         }
     }
 
-    std::string moved;
-
-    if (!SwapModsIniRecords(current, target, moveUp, moved, error))
+    if (updated.empty())
     {
-        return false;
-    }
-
-    if (!moved.empty())
-    {
-        current = std::move(moved);
-        updated = true;
-    }
-
-    if (!updated)
-    {
-        // The record is already where it should be.
+        // The record already has the place it should have.
         return true;
     }
 
-    if (!WriteListText(filePath, bom, current, error))
+    if (!WriteListText(filePath, bom, updated, error))
     {
-        // Nothing was written, so the file is still the one that was read.
-        changed = false;
         return false;
     }
 

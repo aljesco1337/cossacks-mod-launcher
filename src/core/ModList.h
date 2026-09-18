@@ -98,15 +98,23 @@ bool SetModEnabled(
     bool& changed,
     std::string& error);
 
-// Moves one mod one place up or down in "<game folder>/mods/mods.ini".
+// Moves one mod one place up or down in the list the "Manage mods" dialog shows.
 //
-// The list keeps the order the game reads the mods in, so moving one up puts it
-// before its neighbour - the surrounding records keep everything they had (flag,
-// title, comments), only the two records trade places.
+// That list is the order: the records of mods.ini as the file keeps them, followed
+// by the mods that are only found on disk. A move swaps the mod with the row above or
+// below it, and every row it touches ends up with a record, so what the dialog shows
+// and what the file stores never drift apart:
 //
-// A mod the file does not list yet is listed first, switched on - exactly the record
-// switching it on would append - and then moved, because a record the file does not
-// have has no place to move to. "changed" reports whether the file was written.
+//   - both rows are listed already: the two records trade places;
+//   - only one of them is listed: the other is listed beside it, **switched off**, so
+//     giving a mod a place in the order does not make the game load it;
+//   - neither is listed (two rows of the mods found on disk): the rows between them
+//     in that tail are listed as well, switched off, because the tail keeps the order
+//     the folders are found in rather than the one the user set.
+//
+// A record keeps everything it had - its flag, its title, the comments around it.
+// The first and the last row have no neighbour, so nothing is written for them.
+// "changed" reports whether the file was written.
 bool MoveMod(
     const std::filesystem::path& gameDirectory,
     const std::string& dir,

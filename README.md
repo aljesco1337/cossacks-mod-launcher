@@ -311,19 +311,24 @@ the launcher:
 
 ### Editing the list by hand: **Manage mods...**
 
-The dialog lists every mod the game folder knows: the records `mods.ini` has, in
+The dialog shows one list, and that list is the order: the records `mods.ini` has, in
 the order the file keeps them, followed by the mod folders and workshop items the
 file does not mention yet.
 
 | Action | What it writes |
 | --- | --- |
-| Ticking a switch | `core::SetModEnabled` rewrites that record's `dis` line. Switching on a mod without a record appends one, switched on; switching a mod without a record off changes nothing, because the game would not load it either way. |
-| **Move up** / **Move down** | `core::MoveMod` swaps the selected record with its neighbour, which is what changes the order the list keeps the mods in. Only those two blocks trade places: a record's flag, its title and any other key travel with it, and the lines between the two - comments, blank lines - stay where they are. A mod without a record is listed switched on first and then moved. |
+| Ticking a switch | `core::SetModEnabled` rewrites that record's `dis` line. Switching on a mod without a record appends one, switched on, at the end of the list; switching a mod without a record off changes nothing, because the game would not load it either way. |
+| **Move up** / **Move down** | `core::MoveMod` trades the selected mod with the row above or below it, which is what changes the order. Both records keep everything they had - flag, title, the comments around them - and only the two blocks trade places. A mod the list does not have yet is listed, **switched off**, in the place the move gives it, so the row can be moved without the game starting to load it. |
 
-Every change is written straight away: there is no OK button, so closing the
-dialog needs no confirmation. A write that fails - a read-only file, or a
-`mods.ini` stored as UTF-16 - is reported in the dialog and the file is left
-untouched.
+Only the first and the last row of the list have no neighbour to trade with, and only
+then is a direction greyed out. Because the order is stored for the rows a move
+touches, what the dialog shows and what the file keeps never drift apart: the file's
+list of records reads exactly like the dialog, above the mods that are still
+unlisted.
+
+Every change is written straight away: there is no OK button, so closing the dialog
+needs no confirmation. A write that fails - a read-only file, or a `mods.ini` stored
+as UTF-16 - is reported in the dialog and the file is left untouched.
 
 ### When updates are checked
 

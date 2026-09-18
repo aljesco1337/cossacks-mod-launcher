@@ -393,7 +393,107 @@ bool MoveMod(
     bool& changed,
     std::string& error)
 {
-    return MoveModsIniRecord(gameDirectory / L"mods", dir, moveUp, changed, error);
+    changed = false;
+    error.clear();
+
+    if (NormalizeModsIniDir(dir).empty())
+    {
+        error = "the mod directory is empty";
+        return false;
+    }
+
+    // The dialog shows one list and that list is the order: the records of mods.ini
+    // in file order, followed by the mods that are only found on disk. A move swaps
+    // two rows of it, and every row it touches ends up with a record so the file can
+    // hold the order the user sees.
+    std::vector<ModListEntry> entries;
+
+    if (!CollectMods(gameDirectory, entries, error))
+    {
+        return false;
+    }
+
+    const int count = static_cast<int>(entries.size());
+    int index = -1;
+
+    for (int position = 0; position < count; position++)
+    {
+        if (SameModsIniDir(entries[position].dir, dir))
+        {
+            index = position;
+            break;
+        }
+    }
+
+    if (index < 0)
+    {
+        // Not a mod of this game folder: nothing to move.
+        return true;
+    }
+
+    const int neighbour = moveUp ? index - 1 : index + 1;
+
+    if (neighbour < 0 || neighbour >= count)
+    {
+        // First or last row: there is no neighbour to trade places with.
+        return true;
+    }
+
+    const ModListEntry& moved = entries[index];
+    const ModListEntry& other = entries[neighbour];
+
+    if (moved.listed != other.listed)
+    {
+        // One of the two has no record yet. It is listed beside the other one -
+        // switched off, so being given a place does not make the game load it - and
+        // that is exactly the place the move asked for.
+        const bool movedIsMissing = !moved.listed;
+        const std::string& missing = movedIsMissing ? moved.dir : other.dir;
+        const std::string& anchor = movedIsMissing ? other.dir : moved.dir;
+        const bool missingFirst = movedIsMissing ? moveUp : !moveUp;
+
+        return EnsureModsIniOrder(
+            gameDirectory / L"mods", missing, anchor, missingFirst, changed, error);
+    }
+
+    if (moved.listed)
+    {
+        // Both have a record: they trade places.
+        return EnsureModsIniOrder(
+            gameDirectory / L"mods", moved.dir, other.dir, moveUp, changed, error);
+    }
+
+    // Neither has a record: the two are rows of the tail the file does not know in
+    // any order, so the rows the move passes over have to be listed as well - the tail
+    // keeps the order they are found in, not the one the user set, and would put them
+    // back. They are listed switched off, in the order the list shows them.
+    int firstTail = 0;
+
+    while (firstTail < count && entries[firstTail].listed)
+    {
+        firstTail++;
+    }
+
+    std::vector<ModsIniRecordState> states;
+
+    for (int position = firstTail; position <= std::max(index, neighbour); position++)
+    {
+        // The two rows that trade places, in the order the list will have them.
+        int source = position;
+
+        if (source == index)
+        {
+            source = neighbour;
+        }
+        else if (source == neighbour)
+        {
+            source = index;
+        }
+
+        states.push_back(ModsIniRecordState{ entries[source].dir, ModsIniState::Disabled });
+    }
+
+    return EnsureModsIniStates(gameDirectory / L"mods", states, changed, error);
 }
 
 } // namespace core
