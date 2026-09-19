@@ -1,5 +1,0 @@
-<RCC>
-    <qresource prefix="/icons">
-        <file alias="mod-launcher.png">mod-launcher.png</file>
-    </qresource>
-</RCC>

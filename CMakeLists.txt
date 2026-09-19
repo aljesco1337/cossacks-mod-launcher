@@ -187,7 +187,7 @@ set_target_properties(clv_mods PROPERTIES
 )
 
 set(CLV_UI_SOURCES
-    resources/icons.qrc
+    packaging/icons.qrc
     src/ui/main.cpp
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
@@ -199,9 +199,9 @@ set(CLV_UI_SOURCES
 )
 
 if(WIN32)
-    set(CLV_WINDOWS_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/mod-launcher.ico")
+    set(CLV_WINDOWS_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/cossacks-mod-launcher.ico")
     configure_file(
-        resources/CossacksModLauncher.rc.in
+        packaging/CossacksModLauncher.rc.in
         ${CMAKE_CURRENT_BINARY_DIR}/CossacksModLauncher.rc
         @ONLY
     )
