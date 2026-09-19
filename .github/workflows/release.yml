@@ -2,8 +2,10 @@ name: Release
 
 on:
   push:
+    branches:
+      - develop
     tags:
-      - 'v*'
+      - 'mod-launcher-*'
   workflow_dispatch:
 
 permissions:
@@ -64,7 +66,7 @@ jobs:
             -no-openssl `
             -cmake-generator Ninja
 
-          cmake --build . --parallel 2
+          cmake --build . --parallel
           cmake --install .
 
       - name: Configure application
@@ -78,7 +80,7 @@ jobs:
             "-DCLV_BUILD_KIND=static"
           )
 
-          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("v")) {
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("mod-launcher-")) {
             $appVersion = $env:GITHUB_REF_NAME.Substring(1)
             $cmakeArgs += "-DCLV_APP_VERSION=$appVersion"
           }
@@ -93,32 +95,29 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
 
-          $exe = Get-ChildItem build-static -Recurse -Filter CossacksLogViewer.exe |
+          $exe = Get-ChildItem build-static -Recurse -Filter CossacksModLauncher.exe |
             Select-Object -First 1
 
           if (-not $exe) {
-            throw "CossacksLogViewer.exe not found"
+            throw "CossacksModLauncher.exe not found"
           }
 
-          Copy-Item $exe.FullName dist\CossacksLogViewer.exe
+          Copy-Item $exe.FullName dist\CossacksModLauncher.exe
 
-          $dependencies = dumpbin /DEPENDENTS dist\CossacksLogViewer.exe | Out-String
+          $dependencies = dumpbin /DEPENDENTS dist\CossacksModLauncher.exe | Out-String
           $dependencies
 
           if ($dependencies -match 'Qt[56].*\.dll|VCRUNTIME|MSVCP') {
             throw "Static artifact still depends on Qt or MSVC runtime DLLs."
           }
 
-          Compress-Archive `
-            -Path dist\CossacksLogViewer.exe `
-            -DestinationPath dist\CossacksLogViewer-Windows-x86.zip `
-            -Force
+          Copy-Item $exe.FullName dist\CossacksModLauncher.exe
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CossacksLogViewer-Windows-x86
-          path: dist/CossacksLogViewer-Windows-x86.zip
+          name: CossacksModLauncher-Windows-x86
+          path: dist/CossacksModLauncher.exe
           if-no-files-found: error
 
   build-linux:
@@ -143,7 +142,7 @@ jobs:
             -DCLV_BUILD_KIND=dynamic
           )
 
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == v* ]]; then
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == mod-launcher-* ]]; then
             cmake_args+=("-DCLV_APP_VERSION=${GITHUB_REF_NAME#v}")
           fi
 
@@ -155,10 +154,10 @@ jobs:
       - name: Prepare Linux binary archive
         run: |
           mkdir -p dist
-          cp build-linux/CossacksLogViewer dist/CossacksLogViewer
-          chmod +x dist/CossacksLogViewer
-          ldd dist/CossacksLogViewer
-          tar -C dist -czf dist/CossacksLogViewer-Linux-x64.tar.gz CossacksLogViewer
+          cp build-linux/CossacksModLauncher dist/CossacksModLauncher
+          chmod +x dist/CossacksModLauncher
+          ldd dist/CossacksModLauncher
+          tar -C dist -czf dist/CossacksModLauncher-Linux-x64.tar.gz CossacksModLauncher
 
       - name: Download AppImage packaging tools
         run: |
@@ -186,17 +185,17 @@ jobs:
           fi
 
           app_version="dev-${GITHUB_SHA::7}"
-          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == v* ]]; then
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == mod-launcher-* ]]; then
             app_version="${GITHUB_REF_NAME#v}"
           fi
 
           mkdir -p appimage-bin
-          cp build-linux/CossacksLogViewer appimage-bin/ModLauncher
-          chmod +x appimage-bin/ModLauncher
+          cp build-linux/CossacksModLauncher appimage-bin/CossacksModLauncher
+          chmod +x appimage-bin/CossacksModLauncher
 
           VERSION="$app_version" QMAKE="$qmake_path" ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
-            --executable appimage-bin/ModLauncher \
+            --executable appimage-bin/CossacksModLauncher \
             --desktop-file resources/linux/mod-launcher.desktop \
             --icon-file resources/mod-launcher.png \
             --library /usr/lib/x86_64-linux-gnu/libssl.so.3 \
@@ -204,33 +203,30 @@ jobs:
             --plugin qt \
             --output appimage
 
-          find AppDir -name 'libssl.so.3' | grep -q . || { echo "libssl.so.3 missing"; exit 1; }
-          find AppDir -name 'libcrypto.so.3' | grep -q . || { echo "libcrypto.so.3 missing"; exit 1; }
-          
           appimage="$(find . -maxdepth 1 -type f -name '*.AppImage' ! -name 'linuxdeploy*.AppImage' | head -n 1)"
           if [[ -z "$appimage" ]]; then
             echo "linuxdeploy did not produce an AppImage."
             exit 1
           fi
 
-          mv "$appimage" dist/CossacksLogViewer-Linux-x64.AppImage
-          chmod +x dist/CossacksLogViewer-Linux-x64.AppImage
+          mv "$appimage" dist/CossacksModLauncher-Linux-x64.AppImage
+          chmod +x dist/CossacksModLauncher-Linux-x64.AppImage
           tar -C dist -czf \
-            dist/CossacksLogViewer-Linux-x64.AppImage.tar.gz \
-            CossacksLogViewer-Linux-x64.AppImage
+            dist/CossacksModLauncher-Linux-x64.AppImage.tar.gz \
+            CossacksModLauncher-Linux-x64.AppImage
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CossacksLogViewer-Linux-x64
+          name: CossacksModLauncher-Linux-x64
           path: |
-            dist/CossacksLogViewer-Linux-x64.tar.gz
-            dist/CossacksLogViewer-Linux-x64.AppImage.tar.gz
+            dist/CossacksModLauncher-Linux-x64.tar.gz
+            dist/CossacksModLauncher-Linux-x64.AppImage.tar.gz
           if-no-files-found: error
 
   publish-release:
     name: Publish GitHub Release
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'mod-launcher-')
     needs:
       - build-windows-static
       - build-linux

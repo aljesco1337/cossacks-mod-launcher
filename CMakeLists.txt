@@ -5,7 +5,7 @@ if(POLICY CMP0091)
 endif()
 
 # C is required for the vendored miniz ZIP reader.
-project(CossacksLogViewer VERSION 0.1 LANGUAGES C CXX)
+project(CossacksModLauncher VERSION 0.1 LANGUAGES C CXX)
 
 # The version the About box shows and the update check compares against. The
 # release workflow passes the git tag (-DCLV_APP_VERSION=0.2.0); a plain local
@@ -49,7 +49,7 @@ if(CLV_BUILD_KIND STREQUAL "static")
     endif()
 endif()
 
-message(STATUS "CossacksLogViewer build kind: ${CLV_BUILD_KIND}")
+message(STATUS "CossacksModLauncher build kind: ${CLV_BUILD_KIND}")
 
 # ---------------------------------------------------------------------------
 # Vendored ZIP reader (miniz, MIT - see src/third_party/miniz/LICENSE)
@@ -201,17 +201,17 @@ set(CLV_UI_SOURCES
 if(WIN32)
     set(CLV_WINDOWS_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/mod-launcher.ico")
     configure_file(
-        resources/ModLauncher.rc.in
-        ${CMAKE_CURRENT_BINARY_DIR}/ModLauncher.rc
+        resources/CossacksModLauncher.rc.in
+        ${CMAKE_CURRENT_BINARY_DIR}/CossacksModLauncher.rc
         @ONLY
     )
-    set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/ModLauncher.rc
+    set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/CossacksModLauncher.rc
         PROPERTIES
             OBJECT_DEPENDS "${CLV_WINDOWS_ICON}"
     )
 
     list(APPEND CLV_UI_SOURCES
-        ${CMAKE_CURRENT_BINARY_DIR}/ModLauncher.rc
+        ${CMAKE_CURRENT_BINARY_DIR}/CossacksModLauncher.rc
     )
 
     set(CLV_WIN32_EXE WIN32)
@@ -222,24 +222,24 @@ endif()
 if(CLV_QT_MAJOR EQUAL 6)
     # qt_add_executable handles the Windows GUI entry point for Qt 6.
     if(COMMAND qt_add_executable)
-        qt_add_executable(CossacksLogViewer ${CLV_WIN32_EXE} ${CLV_UI_SOURCES})
+        qt_add_executable(CossacksModLauncher ${CLV_WIN32_EXE} ${CLV_UI_SOURCES})
     else()
-        add_executable(CossacksLogViewer ${CLV_WIN32_EXE} ${CLV_UI_SOURCES})
+        add_executable(CossacksModLauncher ${CLV_WIN32_EXE} ${CLV_UI_SOURCES})
     endif()
 else()
-    add_executable(CossacksLogViewer ${CLV_WIN32_EXE} ${CLV_UI_SOURCES})
+    add_executable(CossacksModLauncher ${CLV_WIN32_EXE} ${CLV_UI_SOURCES})
 endif()
 
-target_include_directories(CossacksLogViewer
+target_include_directories(CossacksModLauncher
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_definitions(CossacksLogViewer PRIVATE
+target_compile_definitions(CossacksModLauncher PRIVATE
     CLV_APP_VERSION="${CLV_APP_VERSION}"
 )
 
-target_link_libraries(CossacksLogViewer
+target_link_libraries(CossacksModLauncher
     PRIVATE
         clv_core
         clv_mods
@@ -248,17 +248,17 @@ target_link_libraries(CossacksLogViewer
 
 if(CLV_STATIC_BUILD)
     if(COMMAND qt_import_plugins)
-        qt_import_plugins(CossacksLogViewer
+        qt_import_plugins(CossacksModLauncher
             EXCLUDE_BY_TYPE imageformats
             EXCLUDE_BY_TYPE iconengines
         )
     elseif(CLV_QT_MAJOR EQUAL 6 AND COMMAND qt6_import_plugins)
-        qt6_import_plugins(CossacksLogViewer
+        qt6_import_plugins(CossacksModLauncher
             EXCLUDE_BY_TYPE imageformats
             EXCLUDE_BY_TYPE iconengines
         )
     elseif(CLV_QT_MAJOR EQUAL 5 AND COMMAND qt5_import_plugins)
-        qt5_import_plugins(CossacksLogViewer
+        qt5_import_plugins(CossacksModLauncher
             EXCLUDE_BY_TYPE imageformats
             EXCLUDE_BY_TYPE iconengines
         )
@@ -267,8 +267,8 @@ endif()
 
 if(WIN32)
     # Registry access for Steam/GOG game detection.
-    target_link_libraries(CossacksLogViewer PRIVATE advapi32)
-    target_compile_definitions(CossacksLogViewer PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(CossacksModLauncher PRIVATE advapi32)
+    target_compile_definitions(CossacksModLauncher PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 
     if(CLV_STATIC_BUILD)
         message(STATUS "Static build requested; skipping windeployqt.")
@@ -292,12 +292,12 @@ if(WIN32)
         endif()
 
         if(CLV_WINDEPLOYQT_EXECUTABLE)
-            add_custom_command(TARGET CossacksLogViewer POST_BUILD
+            add_custom_command(TARGET CossacksModLauncher POST_BUILD
                 COMMAND "${CLV_WINDEPLOYQT_EXECUTABLE}"
                         --no-translations
                         --no-compiler-runtime
                         --skip-plugin-types=imageformats,iconengines
-                        "$<TARGET_FILE:CossacksLogViewer>"
+                        "$<TARGET_FILE:CossacksModLauncher>"
                 VERBATIM
                 COMMENT "Deploying Qt runtime dependencies (windeployqt)..."
             )
@@ -310,10 +310,10 @@ if(WIN32)
 endif()
 
 if(MSVC)
-    target_compile_options(CossacksLogViewer PRIVATE /W3)
+    target_compile_options(CossacksModLauncher PRIVATE /W3)
 endif()
 
-set_target_properties(CossacksLogViewer PROPERTIES
+set_target_properties(CossacksModLauncher PROPERTIES
     AUTOMOC ON
     AUTORCC ON
     AUTOUIC ON

@@ -374,7 +374,7 @@ void ModManager::Cancel()
 QString ModManager::TempArchivePath() const
 {
     const QString folder = QStandardPaths::writableLocation(QStandardPaths::TempLocation) +
-        QStringLiteral("/CossacksLogViewer");
+        QStringLiteral("/CossacksModLauncher");
 
     const QString name = QStringLiteral("%1-%2.zip")
                              .arg(QString::fromStdString(core::SanitizeFolderName(release_->id, "mod")))
