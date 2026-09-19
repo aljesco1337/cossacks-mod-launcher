@@ -131,7 +131,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build qt6-base-dev
+          sudo apt-get install -y build-essential cmake curl ninja-build qt6-base-dev qmake6
 
       - name: Configure application
         run: |
@@ -152,7 +152,7 @@ jobs:
       - name: Build application
         run: cmake --build build-linux --parallel 2
 
-      - name: Prepare artifact
+      - name: Prepare Linux binary archive
         run: |
           mkdir -p dist
           cp build-linux/CossacksLogViewer dist/CossacksLogViewer
@@ -160,11 +160,72 @@ jobs:
           ldd dist/CossacksLogViewer
           tar -C dist -czf dist/CossacksLogViewer-Linux-x64.tar.gz CossacksLogViewer
 
+      - name: Download AppImage packaging tools
+        run: |
+          curl --fail --location --show-error \
+            -o linuxdeploy-x86_64.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl --fail --location --show-error \
+            -o linuxdeploy-plugin-qt-x86_64.AppImage \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+
+      - name: Build AppImage artifact
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          mkdir -p dist
+
+          qmake_path="$(command -v qmake6 || true)"
+          if [[ -z "$qmake_path" ]]; then
+            qmake_path="$(command -v qmake || true)"
+          fi
+          if [[ -z "$qmake_path" ]]; then
+            echo "qmake was not found; cannot bundle Qt into the AppImage."
+            exit 1
+          fi
+
+          app_version="dev-${GITHUB_SHA::7}"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == v* ]]; then
+            app_version="${GITHUB_REF_NAME#v}"
+          fi
+
+          mkdir -p appimage-bin
+          cp build-linux/CossacksLogViewer appimage-bin/ModLauncher
+          chmod +x appimage-bin/ModLauncher
+
+          VERSION="$app_version" QMAKE="$qmake_path" ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --executable appimage-bin/ModLauncher \
+            --desktop-file resources/linux/mod-launcher.desktop \
+            --icon-file resources/mod-launcher.png \
+            --library /usr/lib/x86_64-linux-gnu/libssl.so.3 \
+            --library /usr/lib/x86_64-linux-gnu/libcrypto.so.3 \
+            --plugin qt \
+            --output appimage
+
+          find AppDir -name 'libssl.so.3' | grep -q . || { echo "libssl.so.3 missing"; exit 1; }
+          find AppDir -name 'libcrypto.so.3' | grep -q . || { echo "libcrypto.so.3 missing"; exit 1; }
+          
+          appimage="$(find . -maxdepth 1 -type f -name '*.AppImage' ! -name 'linuxdeploy*.AppImage' | head -n 1)"
+          if [[ -z "$appimage" ]]; then
+            echo "linuxdeploy did not produce an AppImage."
+            exit 1
+          fi
+
+          mv "$appimage" dist/CossacksLogViewer-Linux-x64.AppImage
+          chmod +x dist/CossacksLogViewer-Linux-x64.AppImage
+          tar -C dist -czf \
+            dist/CossacksLogViewer-Linux-x64.AppImage.tar.gz \
+            CossacksLogViewer-Linux-x64.AppImage
+
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4
         with:
           name: CossacksLogViewer-Linux-x64
-          path: dist/CossacksLogViewer-Linux-x64.tar.gz
+          path: |
+            dist/CossacksLogViewer-Linux-x64.tar.gz
+            dist/CossacksLogViewer-Linux-x64.AppImage.tar.gz
           if-no-files-found: error
 
   publish-release:

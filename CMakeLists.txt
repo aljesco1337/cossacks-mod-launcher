@@ -187,6 +187,7 @@ set_target_properties(clv_mods PROPERTIES
 )
 
 set(CLV_UI_SOURCES
+    resources/icons.qrc
     src/ui/main.cpp
     src/ui/MainWindow.cpp
     src/ui/MainWindow.h
@@ -198,6 +199,21 @@ set(CLV_UI_SOURCES
 )
 
 if(WIN32)
+    set(CLV_WINDOWS_ICON "${CMAKE_CURRENT_SOURCE_DIR}/resources/mod-launcher.ico")
+    configure_file(
+        resources/ModLauncher.rc.in
+        ${CMAKE_CURRENT_BINARY_DIR}/ModLauncher.rc
+        @ONLY
+    )
+    set_source_files_properties(${CMAKE_CURRENT_BINARY_DIR}/ModLauncher.rc
+        PROPERTIES
+            OBJECT_DEPENDS "${CLV_WINDOWS_ICON}"
+    )
+
+    list(APPEND CLV_UI_SOURCES
+        ${CMAKE_CURRENT_BINARY_DIR}/ModLauncher.rc
+    )
+
     set(CLV_WIN32_EXE WIN32)
 else()
     set(CLV_WIN32_EXE)
@@ -299,5 +315,6 @@ endif()
 
 set_target_properties(CossacksLogViewer PROPERTIES
     AUTOMOC ON
+    AUTORCC ON
     AUTOUIC ON
 )

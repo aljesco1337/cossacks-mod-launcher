@@ -80,6 +80,10 @@ build-release.bat
   ```text
   build-linux/CossacksLogViewer
   ```
+- Tagged releases also publish a self-contained Linux AppImage:
+  ```text
+  CossacksLogViewer-Linux-x64.AppImage.tar.gz
+  ```
 
 ### Manual CMake
 
@@ -491,8 +495,8 @@ running version and the one in the manifest. `0.10` is therefore newer than
 ### Publishing a new version
 
 1. Tag the release (`git tag v0.2.0 && git push origin v0.2.0`). The workflow
-   builds both packages and creates the GitHub Release; the tag is now the
-   version these binaries report.
+   builds the Windows zip, Linux tarball and Linux AppImage, then creates the
+   GitHub Release; the tag is now the version these binaries report.
 2. On the `distribution` branch, raise the `app` block:
 
 ```jsonc

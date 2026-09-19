@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Cossacks Mod Launcher
+GenericName=Mod Launcher
+Comment=Manage Cossacks 3 mods
+Exec=ModLauncher
+Icon=mod-launcher
+Terminal=false
+Categories=Game;Utility;
+StartupWMClass=ModLauncher
