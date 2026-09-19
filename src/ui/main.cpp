@@ -44,7 +44,7 @@ void UsePaletteAwareStyle()
 int main(int argc, char* argv[])
 {
     QApplication application(argc, argv);
-    QApplication::setApplicationName(QStringLiteral("CossacksLogViewer"));
+    QApplication::setApplicationName(QStringLiteral("CossacksModLauncher"));
     QApplication::setOrganizationName(QStringLiteral("CossacksModLauncher"));
     // Compiled in by CMake (see CLV_APP_VERSION), so the About box and the
     // update check both read the same version as the release tag.

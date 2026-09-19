@@ -20,7 +20,7 @@ constexpr int kManifestTimeoutMs = 20000;
 // The archive is 20+ MB; this is an inactivity timeout, not a total limit.
 constexpr int kArchiveTimeoutMs = 60000;
 
-const char kUserAgent[] = "CossacksLogViewer";
+const char kUserAgent[] = "CossacksModLauncher";
 
 bool IsSupportedUrl(const QUrl& url)
 {

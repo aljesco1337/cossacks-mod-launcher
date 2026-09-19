@@ -1,4 +1,4 @@
-# Cossacks Log Viewer
+# Cossacks Mod Launcher
 
 A cross-platform desktop viewer for **Cossacks 3** log files and script compile errors.
 
@@ -64,7 +64,7 @@ build-release.bat
 - `build-release.bat` configures (if needed) and builds the **Release** config.
 - The executable is produced at:
   ```text
-  build\Release\CossacksLogViewer.exe
+  build\Release\CossacksModLauncher.exe
   ```
 
 ### Linux
@@ -78,11 +78,11 @@ build-release.bat
 - `./build-release.sh` configures (if needed) and builds.
 - The binary is produced at:
   ```text
-  build-linux/CossacksLogViewer
+  build-linux/CossacksModLauncher
   ```
 - Tagged releases also publish a self-contained Linux AppImage:
   ```text
-  CossacksLogViewer-Linux-x64.AppImage.tar.gz
+  CossacksModLauncher-Linux-x64.AppImage.tar.gz
   ```
 
 ### Manual CMake
@@ -128,12 +128,12 @@ cmake --build build-static
 
 ```bat
 :: Windows
-build\Release\CossacksLogViewer.exe
+build\Release\CossacksModLauncher.exe
 ```
 
 ```bash
 # Linux
-./build-linux/CossacksLogViewer
+./build-linux/CossacksModLauncher
 ```
 
 On **Windows dynamic builds**, the build automatically runs `windeployqt` after
@@ -459,7 +459,7 @@ broken download cannot damage a working installation.
 Point the launcher at another manifest, for example one served from a folder:
 
 ```bash
-CLV_MANIFEST_URL=http://127.0.0.1:8000/manifest.json ./build/CossacksLogViewer
+CLV_MANIFEST_URL=http://127.0.0.1:8000/manifest.json ./build/CossacksModLauncher
 ```
 
 ---

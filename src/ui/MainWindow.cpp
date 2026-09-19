@@ -259,7 +259,7 @@ MainWindow::MainWindow(QWidget* parent)
 
 void MainWindow::buildUi()
 {
-    setWindowTitle(QStringLiteral("CossacksLogViewer"));
+    setWindowTitle(QStringLiteral("Cossacks Mod Launcher"));
     resize(advancedViewSize_);
 
     auto* central = new QWidget(this);
@@ -1301,8 +1301,8 @@ void MainWindow::showAbout()
 {
     QMessageBox::about(
         this,
-        tr("About CossacksLogViewer"),
-        tr("Cossacks Log Viewer, Version %1\n\n"
+        tr("About Cossacks Mod Launcher"),
+        tr("Cossacks Mod Launcher, Version %1\n\n"
            "A lightweight viewer for Cossacks 3 logs and script compile errors.\n\n"
            "Author: aljesco\n"
            "Contact: aljesco1337@gmail.com")
