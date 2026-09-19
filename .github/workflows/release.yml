@@ -81,7 +81,8 @@ jobs:
           )
 
           if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME.StartsWith("mod-launcher-")) {
-            $appVersion = $env:GITHUB_REF_NAME.Substring(1)
+            $prefix = "mod-launcher-"
+            $appVersion = $env:GITHUB_REF_NAME.Substring($prefix.Length)
             $cmakeArgs += "-DCLV_APP_VERSION=$appVersion"
           }
 
@@ -143,7 +144,7 @@ jobs:
           )
 
           if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == mod-launcher-* ]]; then
-            cmake_args+=("-DCLV_APP_VERSION=${GITHUB_REF_NAME#v}")
+            cmake_args+=("-DCLV_APP_VERSION=${GITHUB_REF_NAME#mod-launcher-}")
           fi
 
           cmake "${cmake_args[@]}"
@@ -186,7 +187,7 @@ jobs:
 
           app_version="dev-${GITHUB_SHA::7}"
           if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" == mod-launcher-* ]]; then
-            app_version="${GITHUB_REF_NAME#v}"
+            app_version="${GITHUB_REF_NAME#mod-launcher-}"
           fi
 
           mkdir -p appimage-bin
@@ -196,8 +197,8 @@ jobs:
           VERSION="$app_version" QMAKE="$qmake_path" ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --executable appimage-bin/CossacksModLauncher \
-            --desktop-file resources/linux/mod-launcher.desktop \
-            --icon-file resources/mod-launcher.png \
+            --desktop-file packaging/linux/cossacks-mod-launcher.desktop \
+            --icon-file packaging/cossacks-mod-launcher.png \
             --library /usr/lib/x86_64-linux-gnu/libssl.so.3 \
             --library /usr/lib/x86_64-linux-gnu/libcrypto.so.3 \
             --plugin qt \
@@ -211,9 +212,16 @@ jobs:
 
           mv "$appimage" dist/CossacksModLauncher-Linux-x64.AppImage
           chmod +x dist/CossacksModLauncher-Linux-x64.AppImage
+          cp packaging/linux/install.sh dist/install.sh
+          cp packaging/cossacks-mod-launcher.png dist/cossacks-mod-launcher.png
+          printf '%s\n' "$app_version" > dist/VERSION
+          chmod +x dist/install.sh
           tar -C dist -czf \
             dist/CossacksModLauncher-Linux-x64.AppImage.tar.gz \
-            CossacksModLauncher-Linux-x64.AppImage
+            CossacksModLauncher-Linux-x64.AppImage \
+            install.sh \
+            cossacks-mod-launcher.png \
+            VERSION
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v4

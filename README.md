@@ -84,6 +84,11 @@ build-release.bat
   ```text
   CossacksModLauncher-Linux-x64.AppImage.tar.gz
   ```
+  Extract it and run `./install.sh` to copy the AppImage into your user profile,
+  install the bundled icon, and add a desktop entry. The archive keeps
+  `CossacksModLauncher-Linux-x64.AppImage`, `install.sh`, `cossacks-mod-launcher.png`,
+  and `VERSION` at the same level. Use `./install.sh --uninstall` to remove the
+  user-local installation, or `./install.sh --help` for paths and versions.
 
 ### Manual CMake
 
@@ -480,10 +485,12 @@ browser.
 
 The version is compiled in from the release tag and there is only one of it:
 
-- `.github/workflows/release.yml` passes `-DCLV_APP_VERSION=${GITHUB_REF_NAME#v}`
-  (the tag without its `v`) to CMake when a `v*` tag is built.
+- `.github/workflows/release.yml` passes the `mod-launcher-*` tag without its
+  `mod-launcher-` prefix to CMake as `-DCLV_APP_VERSION=...`.
 - `CLV_APP_VERSION` becomes `QApplication::setApplicationVersion()`, so the
   About box, the update check and the status bar all read the same value.
+- The Linux AppImage archive also writes that same label into `VERSION`, which
+  `install.sh` shows before replacing an installed AppImage.
 - A local build without the option falls back to `project(... VERSION ...)` in
   `CMakeLists.txt`.
 
@@ -494,9 +501,10 @@ running version and the one in the manifest. `0.10` is therefore newer than
 
 ### Publishing a new version
 
-1. Tag the release (`git tag v0.2.0 && git push origin v0.2.0`). The workflow
-   builds the Windows zip, Linux tarball and Linux AppImage, then creates the
-   GitHub Release; the tag is now the version these binaries report.
+1. Tag the release (`git tag mod-launcher-0.2.0 && git push origin mod-launcher-0.2.0`).
+   The workflow builds the Windows zip, Linux tarball and Linux AppImage, then
+   creates the GitHub Release; the tag suffix is now the version these binaries
+   report.
 2. On the `distribution` branch, raise the `app` block:
 
 ```jsonc

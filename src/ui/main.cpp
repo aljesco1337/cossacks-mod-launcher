@@ -53,7 +53,7 @@ int main(int argc, char* argv[])
     // Before any widget exists: the style cannot be swapped afterwards.
     UsePaletteAwareStyle();
 
-    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/mod-launcher.png")));
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/cossacks-mod-launcher.png")));
 
     MainWindow window;
     window.show();
