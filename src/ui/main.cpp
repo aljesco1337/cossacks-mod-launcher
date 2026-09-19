@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QIcon>
 #include <QString>
 #include <QStyle>
 #include <QStyleFactory>
@@ -51,6 +52,8 @@ int main(int argc, char* argv[])
 
     // Before any widget exists: the style cannot be swapped afterwards.
     UsePaletteAwareStyle();
+
+    QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/mod-launcher.png")));
 
     MainWindow window;
     window.show();
