@@ -65,6 +65,7 @@ private slots:
     void revealLastExport();
     void deleteLogs();
     void manageMods();
+    void startGame();
 
 private:
     void buildUi();
@@ -158,6 +159,9 @@ private:
     QPushButton* manageModsButton_ = nullptr;
     QLabel* manageModsHint_ = nullptr;
 
+    // Starts the game through Steam and closes the launcher.
+    QPushButton* startGameButton_ = nullptr;
+
     QTimer* modCheckTimer_ = nullptr;
     QAction* autoModCheckAction_ = nullptr;
     QLabel* appUpdateLabel_ = nullptr;
@@ -180,9 +184,9 @@ private:
 
     // Window size per view, so switching back does not throw away the size the
     // user picked for the other one. The simple view has the folder row, the mod
-    // card and the mod list row, which leaves the log viewer's room to the
-    // advanced view.
-    QSize simpleViewSize_{ 1000, 248 };
+    // card, the mod list row and the start button row, which leaves the log
+    // viewer's room to the advanced view.
+    QSize simpleViewSize_{ 1000, 292 };
     QSize advancedViewSize_{ 1600, 800 };
 
     QString lastExportPath_;

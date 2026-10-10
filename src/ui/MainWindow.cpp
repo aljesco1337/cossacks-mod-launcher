@@ -442,7 +442,22 @@ void MainWindow::buildUi()
     simpleViewSpacer_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     mainLayout->addWidget(simpleViewSpacer_);
 
+    // Bottom row: shared by both views, with the start button in the corner.
+    auto* bottomBar = new QHBoxLayout();
+    bottomBar->setSpacing(12);
+
+    startGameButton_ = new QPushButton(tr("Start game"), central);
+    startGameButton_->setMinimumHeight(32);
+    startGameButton_->setMinimumWidth(140);
+    startGameButton_->setToolTip(tr("Starts Cossacks 3 through Steam and closes the launcher."));
+
+    bottomBar->addStretch(1);
+    bottomBar->addWidget(startGameButton_);
+
+    mainLayout->addLayout(bottomBar);
+
     // Connections.
+    connect(startGameButton_, &QPushButton::clicked, this, &MainWindow::startGame);
     connect(browseButton_, &QPushButton::clicked, this, &MainWindow::browseGame);
     connect(detectButton_, &QPushButton::clicked, this, &MainWindow::detectGame);
     connect(manageModsButton_, &QPushButton::clicked, this, &MainWindow::manageMods);
@@ -782,6 +797,7 @@ void MainWindow::applyTheme()
     exportButton_->setStyleSheet(ui::NeutralButtonStyle());
     deleteLogsButton_->setStyleSheet(ui::DangerButtonStyle());
     manageModsButton_->setStyleSheet(ui::NeutralButtonStyle());
+    startGameButton_->setStyleSheet(ui::PrimaryButtonStyle());
 
     modsPanel_->applyTheme();
 
@@ -1601,6 +1617,25 @@ void MainWindow::manageMods()
             .arg(dialog.changeCount())
             .arg(dialog.changeCount() == 1 ? QStringLiteral("") : QStringLiteral("s")),
         kNotificationTimeoutMs);
+}
+
+void MainWindow::startGame()
+{
+    // Steam registers the "steam://" scheme on every platform it runs on, so the
+    // launcher does not have to know where the client or the game is installed.
+    const QUrl url(
+        QStringLiteral("steam://rungameid/%1").arg(QLatin1String(core::kCossacksSteamAppId)));
+
+    if (!QDesktopServices::openUrl(url))
+    {
+        QMessageBox::warning(
+            this,
+            tr("Cannot start the game"),
+            tr("Steam did not respond to the start request. Make sure Steam is installed."));
+        return;
+    }
+
+    close();
 }
 
 QString MainWindow::cossacksIniPath() const
