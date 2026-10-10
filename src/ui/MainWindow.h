@@ -110,6 +110,10 @@ private:
     // mod card's state.
     void updateModToolsState();
 
+    // The game refuses to run twice, so the start button is switched off while
+    // it is running or still on its way up after a start request.
+    void updateStartGameState();
+
     // Reads "cossacks.ini" and mirrors its logging switches in the checkbox.
     void refreshLogSettings();
     QString cossacksIniPath() const;
@@ -159,8 +163,10 @@ private:
     QPushButton* manageModsButton_ = nullptr;
     QLabel* manageModsHint_ = nullptr;
 
-    // Starts the game through Steam and closes the launcher.
+    // Starts the game through Steam.
     QPushButton* startGameButton_ = nullptr;
+    QTimer* gameStateTimer_ = nullptr;
+    QTimer* startGameCooldownTimer_ = nullptr;
 
     QTimer* modCheckTimer_ = nullptr;
     QAction* autoModCheckAction_ = nullptr;

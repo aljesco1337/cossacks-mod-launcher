@@ -78,6 +78,12 @@ constexpr int kModCheckIntervalMs = 6 * 60 * 60 * 1000;
 
 constexpr int kNotificationTimeoutMs = 8000;
 
+// How often the start button asks whether the game is running, and how long it
+// stays switched off after a start request: Steam needs a while to bring the
+// game up, and until then nothing says that it is on its way.
+constexpr int kGameStateIntervalMs = 2000;
+constexpr int kStartGameCooldownMs = 15000;
+
 QString fromWide(const std::wstring& value)
 {
     return QString::fromStdWString(value);
@@ -194,6 +200,78 @@ std::optional<QString> readRegistryString(
 }
 #endif
 
+#ifndef _WIN32
+// Looks through /proc for a process started from the game's executable. The
+// native build runs as "cossacks"; under Proton the Windows name shows up in
+// the command line of the game and of the wrappers Steam starts it with, and
+// the mutex itself stays inside Wine where this process cannot see it.
+bool isGameProcessListed()
+{
+    const QStringList processIds = QDir(QStringLiteral("/proc"))
+        .entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+
+    for (const QString& processId : processIds)
+    {
+        bool numeric = false;
+        processId.toLongLong(&numeric);
+
+        if (!numeric)
+        {
+            continue;
+        }
+
+        QFile file(QStringLiteral("/proc/%1/cmdline").arg(processId));
+
+        // Processes come and go while the list is walked, and those of other
+        // users may be unreadable; neither is worth reporting.
+        if (!file.open(QIODevice::ReadOnly))
+        {
+            continue;
+        }
+
+        const QList<QByteArray> arguments = file.readAll().split('\0');
+
+        for (const QByteArray& argument : arguments)
+        {
+            // Wine passes Windows paths, so both separators end a directory.
+            QString name = QString::fromLocal8Bit(argument);
+            name.replace(QLatin1Char('\\'), QLatin1Char('/'));
+            name = name.section(QLatin1Char('/'), -1);
+
+            if (name.compare(QStringLiteral("cossacks"), Qt::CaseInsensitive) == 0 ||
+                name.compare(QStringLiteral("cossacks.exe"), Qt::CaseInsensitive) == 0)
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+#endif
+
+// The game holds a named mutex for as long as it runs and refuses to start a
+// second copy while it exists, so the same name tells the launcher whether a
+// start request would only bring up the game's "already running" message.
+// Linux has no such mutex to look at, so the process list is searched instead.
+bool isGameRunning()
+{
+#ifdef _WIN32
+    const HANDLE mutex = OpenMutexA(SYNCHRONIZE, FALSE, "UnicornStartup");
+
+    if (mutex != nullptr)
+    {
+        CloseHandle(mutex);
+        return true;
+    }
+
+    // The mutex exists, but belongs to a process this one may not open.
+    return GetLastError() == ERROR_ACCESS_DENIED;
+#else
+    return isGameProcessListed();
+#endif
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -229,6 +307,18 @@ MainWindow::MainWindow(QWidget* parent)
             refreshLogs(false, true);
         }
     });
+
+    gameStateTimer_ = new QTimer(this);
+    gameStateTimer_->setInterval(kGameStateIntervalMs);
+    connect(gameStateTimer_, &QTimer::timeout, this, &MainWindow::updateStartGameState);
+    gameStateTimer_->start();
+
+    startGameCooldownTimer_ = new QTimer(this);
+    startGameCooldownTimer_->setSingleShot(true);
+    startGameCooldownTimer_->setInterval(kStartGameCooldownMs);
+    connect(startGameCooldownTimer_, &QTimer::timeout, this, &MainWindow::updateStartGameState);
+
+    updateStartGameState();
 
     modCheckTimer_ = new QTimer(this);
     modCheckTimer_->setInterval(kModCheckIntervalMs);
@@ -449,7 +539,6 @@ void MainWindow::buildUi()
     startGameButton_ = new QPushButton(tr("Start game"), central);
     startGameButton_->setMinimumHeight(32);
     startGameButton_->setMinimumWidth(140);
-    startGameButton_->setToolTip(tr("Starts Cossacks 3 through Steam and closes the launcher."));
 
     bottomBar->addStretch(1);
     bottomBar->addWidget(startGameButton_);
@@ -1621,6 +1710,14 @@ void MainWindow::manageMods()
 
 void MainWindow::startGame()
 {
+    // The button may be up to one poll behind the game.
+    updateStartGameState();
+
+    if (!startGameButton_->isEnabled())
+    {
+        return;
+    }
+
     // Steam registers the "steam://" scheme on every platform it runs on, so the
     // launcher does not have to know where the client or the game is installed.
     const QUrl url(
@@ -1635,7 +1732,27 @@ void MainWindow::startGame()
         return;
     }
 
-    close();
+    startGameCooldownTimer_->start();
+    updateStartGameState();
+}
+
+void MainWindow::updateStartGameState()
+{
+    const bool running = isGameRunning();
+
+    // Once the game is up its own state takes over from the cooldown.
+    if (running)
+    {
+        startGameCooldownTimer_->stop();
+    }
+
+    const bool starting = startGameCooldownTimer_->isActive();
+
+    startGameButton_->setEnabled(!running && !starting);
+    startGameButton_->setToolTip(
+        running ? tr("Cossacks 3 is already running.")
+        : starting ? tr("Cossacks 3 is starting...")
+        : tr("Starts Cossacks 3 through Steam."));
 }
 
 QString MainWindow::cossacksIniPath() const
