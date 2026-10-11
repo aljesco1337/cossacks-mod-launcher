@@ -5,7 +5,7 @@ if(POLICY CMP0091)
 endif()
 
 # C is required for the vendored miniz ZIP reader.
-project(CossacksModLauncher VERSION 0.1 LANGUAGES C CXX)
+project(CossacksModLauncher VERSION 0.3 LANGUAGES C CXX)
 
 # The version the About box shows and the update check compares against. The
 # release workflow passes the git tag (-DCLV_APP_VERSION=0.2.0); a plain local
