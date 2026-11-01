@@ -9,12 +9,12 @@
     "ren": {
       "workshopId": "3398700006",
       "name": "Renaissance",
-      "versionLabel": "0.39",
-      "versionNumber": 390,
-      "updatedAt": "2026-10-24T06:22:56+03:00",
-      "downloadUrl": "https://github.com/aljesco1337/cossacks-mod-launcher/releases/download/ren-v0.39/Renaissance_0.39.zip",
-      "sha256": "sha256:0875dab5496a29f18c38ec98b651dbc02c52458c5c7d5218ad14f55bbb084247",
-      "size": 29012016
+      "versionLabel": "0.40",
+      "versionNumber": 400,
+      "updatedAt": "2026-11-01T06:13:36+02:00",
+      "downloadUrl": "https://github.com/aljesco1337/cossacks-mod-launcher/releases/download/ren-v0.40/Renaissance_0.40.zip",
+      "sha256": "sha256:617341a1196efc2293ce82c74364477472b98af826b890dba1aeef19fe46c485",
+      "size": 29165220
     }
   }
 }
